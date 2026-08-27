@@ -224,6 +224,25 @@ class TestValidate(unittest.TestCase):
         errs = bq.validate(d)
         self.assertTrue(any("reveal.when" in e for e in errs), errs)
 
+    def test_advice_wording_in_label_also_caught(self):
+        """建议措辞藏在 label 里同样要拦 —— 否则换个字段就绕过了。"""
+        d = doc()
+        d["questions"][0]["groups"][0]["options"][0]["label"] = "开发建议：选 A，最省事"
+        errs = bq.validate(d)
+        self.assertTrue(any("advice_allowed" in e for e in errs), errs)
+
+    def test_malformed_roles_returns_error_not_exception(self):
+        d = doc()
+        d["roles"] = ["fin"]                 # 字符串列表,不是对象列表
+        errs = bq.validate(d)                # 必须返回而不是抛
+        self.assertTrue(any("roles" in e for e in errs), errs)
+
+    def test_malformed_links_returns_error_not_exception(self):
+        d = doc()
+        d["links"] = ["oops"]
+        errs = bq.validate(d)
+        self.assertTrue(any("links" in e for e in errs), errs)
+
 
 if __name__ == "__main__":
     unittest.main()

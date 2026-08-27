@@ -29,7 +29,9 @@ from pathlib import Path
 
 TIERS = ("src", "code", "guess")
 ADVICE_WORDS = re.compile(r"开发建议|建议选|推荐选|我的默认建议")
-RULE_ENTRY = re.compile(r"^##\s*(?P<id>R\d+)\.\s*(?P<text>.*)$", re.M)
+# 规则文档条目标题:允许 ## 或 ### 两级标题,分隔符允许半角/全角句号、半角/全角冒号,
+# 因为不同作者写规则文档时标题层级和标点习惯不一致,死绑一种格式会让 validate_refs 误报。
+RULE_ENTRY = re.compile(r"^#{2,3}\s*(?P<id>R\d+)[.．:：]\s*(?P<text>.*)$", re.M)
 # when 表达式里的题号引用:  "1=B"、"4=B & 1=B"、"7.crm!=x"
 WHEN_REF = re.compile(r"(?<![\w.])(\d+)\s*(?:\.\w+)?\s*(?:!=|=)")
 
@@ -44,6 +46,17 @@ def validate(doc):
     for key in ("doc", "roles", "questions"):
         if key not in doc:
             errs.append(f"缺顶层字段 `{key}`")
+    if errs:
+        return errs
+
+    # 类型不对就报错并提前返回,不往下走 —— 结构错误没法继续做语义校验,
+    # 而 validate() 承诺不抛异常,格式错的 questionnaire.json 也要给出诊断而不是让工具崩掉。
+    if not isinstance(doc["roles"], list) or any(not isinstance(r, dict) for r in doc["roles"]):
+        errs.append("roles 必须是对象数组,每项至少含 id/name —— 不是自由文本列表")
+    if not isinstance(doc["questions"], list) or any(not isinstance(q, dict) for q in doc["questions"]):
+        errs.append("questions 必须是对象数组")
+    if "links" in doc and not isinstance(doc["links"], dict):
+        errs.append("links 必须是对象(键为 na/carry/clash,值为数组)")
     if errs:
         return errs
 
@@ -86,11 +99,13 @@ def validate(doc):
         if not q.get("advice_allowed", False):
             for g in q.get("groups", []):
                 for o in g.get("options", []):
-                    hit = ADVICE_WORDS.search(str(o.get("cost", "")))
-                    if hit:
-                        errs.append(
-                            f"{tag} 选项 {o.get('key')}: advice_allowed=false 却带建议措辞"
-                            f"「{hit.group()}」—— 规则/账务口径题标建议等于替业务拍板")
+                    # label 和 cost 都要扫 —— 只查 cost 的话,文案挪个字段就能绕过禁令。
+                    for field in ("label", "cost"):
+                        hit = ADVICE_WORDS.search(str(o.get(field, "")))
+                        if hit:
+                            errs.append(
+                                f"{tag} 选项 {o.get('key')}: advice_allowed=false 却在 `{field}` "
+                                f"里带建议措辞「{hit.group()}」—— 规则/账务口径题标建议等于替业务拍板")
 
         errs.extend(_check_branches(q, tag))
         for r in q.get("reveal", []):
@@ -100,6 +115,9 @@ def validate(doc):
 
     for kind, items in (doc.get("links") or {}).items():
         for it in items or []:
+            if not isinstance(it, dict):
+                errs.append(f"links.{kind}: 条目必须是对象,实际「{it!r}」")
+                continue
             errs.extend(_check_link(kind, it, layer_of))
 
     return errs
