@@ -2964,7 +2964,7 @@ Expected: FAIL —— 五条新测试全红
 
 **4a. amber 升为正式角色。** `.unreviewed` 已用 amber；再把「演示数字基于开发假设」（`.demo-assumed`）从红改 amber、「核对未表态」的计数在 `statusText` 里用 amber。红只留给拦人（阻塞／无据／矛盾／未署名）。
 
-**4b. 正文行宽。** 给 `.bg`、`.logic`、`.clash`、`.guess-w`、`.why2`、`.ev-weak` 加 `max-width:62ch`——中文一行 50 多字会跳行。
+**4b. 正文行宽。** 给 `.bg`、`.logic`、`.clash`、`.why2`、`.ev-weak` 加 `max-width:62ch`——中文一行 50 多字会跳行。
 
 **4c. 自动不适用不再遮罩。** 删掉 `.grp.na::after` 整条与 `.grp.na{position:relative;opacity:.45}`，换成：
 
@@ -2979,6 +2979,8 @@ Expected: FAIL —— 五条新测试全红
 
 **4d. 落款搬回 `<main>` 内。** Step 3a 的骨架把 `<section class="signoff">` 放在 `.body` 之外，导致落款整页通栏、伸到左侧索引底下。移进 `<main>`，与题目同宽——单据的落款必须与正文对齐。
 
+> **开工前核对过的两处选择器名**：模板里没有 `.badge.guess`（实际是 `.ev-badge.guess`），也没有 `.guess-w`（无据题的 ⚠ 说明用的是 `.ev-weak`）。上面 4b 与下面 Step 5 已按真实类名写好——**动手前请自己再 grep 一遍**确认，打印块引用不存在的选择器就是死代码，而且不会有任何报错告诉你。
+
 - [ ] **Step 5: 打印规格**
 
 `@media print` 整段替换为：
@@ -2992,10 +2994,10 @@ Expected: FAIL —— 五条新测试全红
   .q,.masthead,.signoff,.ledger tr,.demo{break-inside:avoid}
   .cond,.ev,.ev-b,.coords{display:block!important}
   .seal{border-color:#000;color:#000}
-  .tag.first,.badge.guess{border:1.5px solid #000;color:#000;background:#fff;font-weight:700}
-  .badge.guess{background:#000;color:#fff}
+  .tag.first,.ev-badge.guess{border:1.5px solid #000;color:#000;background:#fff;font-weight:700}
+  .ev-badge.guess{background:#000;color:#fff}
   .demo td.v,.ledger td.n{border-left-color:#000;border-right-color:#000}
-  .clash,.guess-w,.ev-weak{border-color:#000;background:#fff}
+  .clash,.ev-weak{border-color:#000;background:#fff}
   textarea,input[type=text]{border-color:#000;background:
     repeating-linear-gradient(#fff 0 27px,#ccc 27px 28px)}
 }
