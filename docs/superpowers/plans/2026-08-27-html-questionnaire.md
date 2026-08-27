@@ -2320,9 +2320,103 @@ jobs:
         run: |
           python3 scripts/check_questionnaire.py \
             "examples/demo-project/docs/requirements/raw/2026-07-14-确认单v1-回执.md"
+
+      - name: 模板 JS 语法检查
+        run: python3 scripts/check_template_js.py
 ```
 
-- [ ] **Step 3: 说明两类测试的分工**
+**为什么加最后这步**：模板里那段 `<script>` 是整个页面的命脉——语法一错，业务打开就是一片空白且零提示，而 Python 侧的测试一条都照不出来。`node` 在 `ubuntu-latest` 上预装，抠出来跑 `node --check` 是最便宜的一道保险。
+
+- [ ] **Step 3: 加模板 JS 的语法与契约检查**
+
+Create `scripts/check_template_js.py`：
+
+```python
+#!/usr/bin/env python3
+"""check_template_js.py — 抠出模板里的 <script> 交给 node 检查
+
+用法:
+  python3 scripts/check_template_js.py [模板路径]
+
+为什么需要: 模板里那段 <script> 是整个页面的命脉 —— 语法一错,业务打开就是
+一片空白且零提示,而 Python 侧的测试一条都照不出来。
+
+机判两件事:
+1. 语法: node --check。node 不可用则跳过并打印说明(不算失败,本地可能没装)。
+2. whenToDom 契约: schema 用题号(`2=B`),DOM 用输入框 name(`q2=B`)。这个转换
+   一旦静默失效,所有条件显隐/不适用/矛盾全部不匹配,页面不报错、只是什么都不发生。
+   这里直接跑模板里的真实实现,不在 Python 侧镜像一份 —— 镜像就是两份真源。
+"""
+import json, re, shutil, subprocess, sys, tempfile
+from pathlib import Path
+
+TPL = Path(sys.argv[1]) if len(sys.argv) > 1 else (
+    Path(__file__).resolve().parents[1] / "templates" / "questionnaire.html")
+
+# schema 题号 → DOM name 的对照;左边喂给 whenToDom,右边是期望输出
+WHEN_CASES = [
+    ("1=A", "q1=A"),
+    ("2=B", "q2=B"),
+    ("4=B & 1=B", "q4=B & q1=B"),
+    ("10=C", "q10=C"),
+    ("q1=A", "q1=A"),          # 已经是 DOM name,不该被二次加前缀
+]
+
+
+def extract_script(html: str) -> str:
+    blocks = re.findall(r"<script(?![^>]*\bsrc=)(?![^>]*type=)[^>]*>(.*?)</script>",
+                        html, re.S)
+    if not blocks:
+        print("  ✗ 模板里找不到可检查的 <script> 块"); sys.exit(1)
+    return max(blocks, key=len)
+
+
+def main():
+    html = TPL.read_text(encoding="utf-8")
+    js = extract_script(html)
+    node = shutil.which("node")
+    if not node:
+        print("  △ 未找到 node,跳过模板 JS 检查(CI 上 ubuntu-latest 预装 node)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    f = d / "tpl.js"
+    f.write_text(js, encoding="utf-8")
+    r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  ✗ 模板 JS 语法错误:\n{r.stderr.strip()}"); sys.exit(1)
+    print(f"  ✓ 模板 JS 语法通过({len(js)} 字节)")
+
+    # whenToDom 契约:抠出函数体单独跑,不依赖 DOM
+    m = re.search(r"function whenToDom\(.*?\n\}", js, re.S)
+    if not m:
+        print("  ✗ 模板里找不到 whenToDom() —— 条件表达式的题号→DOM name 转换没了"); sys.exit(1)
+    probe = d / "probe.mjs"
+    probe.write_text(m.group(0) + "\n"
+                     + f"const cases = {json.dumps(WHEN_CASES, ensure_ascii=False)};\n"
+                     + "const bad = cases.filter(([i, o]) => whenToDom(i) !== o)\n"
+                     + "  .map(([i, o]) => `${i} -> ${whenToDom(i)} (期望 ${o})`);\n"
+                     + "console.log(JSON.stringify(bad));\n", encoding="utf-8")
+    r = subprocess.run([node, str(probe)], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  ✗ whenToDom 探针跑不起来:\n{r.stderr.strip()}"); sys.exit(1)
+    bad = json.loads(r.stdout.strip() or "[]")
+    for b in bad:
+        print(f"  ✗ whenToDom 契约不符: {b}")
+    if bad:
+        print("\n✗ 题号→DOM name 的转换失效 —— 条件显隐/不适用/矛盾会全部静默不匹配")
+        sys.exit(1)
+    print(f"  ✓ whenToDom 契约通过({len(WHEN_CASES)} 组)")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+Run: `python3 scripts/check_template_js.py`
+Expected: 两条 ✓（若本机没装 node，第一条应打印「跳过」而**不是**失败）
+
+- [ ] **Step 4: 说明两类测试的分工**
 
 Modify `tests/README.md`，在开头插入：
 
@@ -2334,14 +2428,19 @@ Modify `tests/README.md`，在开头插入：
 - **`scenario-*.md`** — 给人读的场景剧本，用来人工回归 skill 的**判断质量**
   （成色分级、冲突检测、剥离阀门）——这些没法用断言表达，需要人读产出评估。
 
-**CI 覆盖不到的**：模板的 JS 渲染与交互需要浏览器。每次改 `templates/questionnaire.html`
-后按实施计划 Task 3 Step 6 的清单人工过一遍。
+- **`scripts/check_template_js.py`** — 抠出模板里的 `<script>` 跑 `node --check`，并用
+  node 跑模板里真实的 `whenToDom()` 核对「schema 题号 → DOM name」的转换。这两件事
+  Python 测试照不出来：语法一错业务看到空白页且零提示；转换一失效条件显隐/不适用/矛盾
+  全部静默不匹配。
+
+**CI 覆盖不到的**：模板的**渲染结果与视觉**需要浏览器（语法与 whenToDom 已由上面那条覆盖）。
+每次改 `templates/questionnaire.html` 后按实施计划 Task 3 Step 6 的清单人工过一遍。
 ```
 
-- [ ] **Step 4: 提交并确认 CI 绿**
+- [ ] **Step 5: 提交并确认 CI 绿**
 
 ```bash
-git add .github/workflows/ci.yml tests/README.md
+git add .github/workflows/ci.yml scripts/check_template_js.py tests/README.md
 git commit -m "ci: 把机检脚本接进 push/PR 门禁
 
 原来 CI 只在 release 时跑、且只验 frontmatter——仓库最有价值的两个机检脚本
@@ -2349,7 +2448,7 @@ git commit -m "ci: 把机检脚本接进 push/PR 门禁
 也只是给人读的 markdown，不可执行。这半天就手工撞出三处格式契约不一致。
 
 现在 push/PR 会跑：frontmatter 校验、单元测试、样例确认单校验与出包、样例
-spec 证据核验、旧手写回执回归。JS 渲染仍需人工过浏览器清单（tests/README 已注明）。"
+spec 证据核验、旧手写回执回归。并抠出模板 <script> 跑 node --check 与 whenToDom 契约探针。视觉与打印仍需人工过浏览器清单（tests/README 已注明）。"
 git push
 ```
 
