@@ -29,7 +29,11 @@ class TestRenderHtml(unittest.TestCase):
 
     def test_template_carries_no_project_content(self):
         """模板本身不得残留 AR 原型的项目内容。"""
-        for leak in ("AR 回款", "账期偏离", "红冲", "cust_type"):
+        # AR-KPI / 8 个指标 / receivable.py 是移植时另外抓出来的四处残留（<title>、
+        # downloadReceipt 文件名、renderPreview 未答提示、渲染器注释里的示例路径），
+        # 补进词表锁住，防静默回归。
+        for leak in ("AR 回款", "账期偏离", "红冲", "cust_type",
+                     "AR-KPI", "8 个指标", "receivable.py"):
             self.assertNotIn(leak, self.tpl, f"模板残留原型内容: {leak}")
 
     def test_advice_slot_absent_for_rule_questions(self):

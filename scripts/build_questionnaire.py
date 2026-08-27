@@ -34,6 +34,13 @@ ADVICE_WORDS = re.compile(r"开发建议|建议选|推荐选|我的默认建议"
 RULE_ENTRY = re.compile(r"^#{2,3}\s*(?P<id>R\d+)[.．:：]\s*(?P<text>.*)$", re.M)
 # when 表达式里的题号引用:  "1=B"、"4=B & 1=B"、"7.crm!=x"
 WHEN_REF = re.compile(r"(?<![\w.])(\d+)\s*(?:\.\w+)?\s*(?:!=|=)")
+# 页面侧 meets() 只实现了「& 连接的等值判断」。设计文档许诺的 | / != / in [...] 三个算子
+# 页面没有实现:前两个静默恒 false,`in [...]` 更会让 refreshAll() 抛 TypeError —— 进度条、
+# 身份选择器、导出按钮一起失效,而屏幕上没有任何提示,业务连东西都交不回来。所以在出包时
+# 红字拒收:失败要出现在开发面前,不要出现在业务面前。三个算子实现之后再放宽这里。
+WHEN_TOKEN = re.compile(r"^\s*\d+(?:\.\w+)?\s*=\s*[^=&|!\[\]]+$")
+# 选项 key 原样拼进 data-when="q<no>=<key>" 与 radio value,含算子字符会让条件引擎永不命中
+KEY_BAD = re.compile(r"[=&|!\[\]\s]")
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "templates" / "questionnaire.html"
 PLACEHOLDER = "__QUESTIONNAIRE_DATA__"
 
@@ -41,6 +48,61 @@ PLACEHOLDER = "__QUESTIONNAIRE_DATA__"
 def _when_refs(expr):
     """从 when 表达式里取出被引用的题号。"""
     return {int(m) for m in WHEN_REF.findall(str(expr))}
+
+
+def _check_when_expr(expr, tag):
+    """when 必须落在页面 meets() 实现的子集里:`&` 连接的 `<题号>[.<组id>]=<值>`。"""
+    text = str(expr)
+    for token in text.split("&"):
+        if not WHEN_TOKEN.match(token):
+            return [f"{tag}: when「{text}」用了页面未实现的算子 —— meets() 目前只支持 `&` "
+                    f"连接的等值判断(如 `1=A & 2=B`)。`|`、`!=`、`in [...]` 都还没实现:"
+                    f"前两个会静默恒 false,`in [...]` 会让整页 JS 抛异常瘫痪(导出按钮失效"
+                    f"且无任何提示),故一律在出包时拒收"]
+    return []
+
+
+def _check_option_keys(gs, tag):
+    """选项 key 会原样进 data-when 与 radio value,含算子字符条件显隐就永不命中。"""
+    errs = []
+    for g in gs:
+        for o in g.get("options", []):
+            k = str(o.get("key", ""))
+            if not k or KEY_BAD.search(k):
+                errs.append(f"{tag} 组 {g.get('id')}: 选项 key「{k}」为空或含空白/算子字符"
+                            f"(= & | ! [ ]) —— key 原样拼进 data-when 与 radio value,"
+                            f"这类字符会让条件显隐永不命中")
+    return errs
+
+
+def _carry_dom_id(ref):
+    """links.carry 的 from/to 写作 `<题号>.<字段id>`,字段id 即该题 reveal[].when 的键;
+    页面上那个输入框的 DOM id 是 rv-<题号>-<字段id>。这是 carry 唯一的落点约定。"""
+    parts = str(ref).split(".")
+    return f"rv-{parts[0]}-{parts[1]}" if len(parts) == 2 else None
+
+
+def _check_carry_refs(doc):
+    """carry 的 from/to 必须真能落到某道题的某个 reveal 输入框上 —— 落不到就是死链路:
+    页面不报错、业务看不出、事实也没被传过去。"""
+    errs = []
+    reveal_ids = {f"rv-{q.get('no')}-{r.get('when')}"
+                  for q in doc.get("questions", []) or []
+                  if isinstance(q, dict)
+                  for r in q.get("reveal", []) or [] if isinstance(r, dict)}
+    for it in (doc.get("links") or {}).get("carry") or []:
+        if not isinstance(it, dict):
+            continue
+        for side in ("from", "to"):
+            dom = _carry_dom_id(it.get(side, ""))
+            if dom is None:
+                errs.append(f"links.carry: `{side}`「{it.get(side)}」格式不对,"
+                            f"应为 `<题号>.<字段id>`(字段id 即该题 reveal[].when 的键)")
+            elif dom not in reveal_ids:
+                errs.append(f"links.carry: `{side}`「{it.get(side)}」在页面上没有对应输入框"
+                            f"(找不到 {dom}) —— carry 只能落在 reveal 的输入框上,"
+                            f"落不到就是死链路:不报错、不生效、也没人看得出")
+    return errs
 
 
 def validate(doc):
@@ -98,6 +160,9 @@ def validate(doc):
                         f"每项至少含 key/label —— 不是字符串列表")
             opts_ok = False
 
+        if opts_ok:
+            errs.extend(_check_option_keys(gs, tag))
+
         groups = {g.get("id"): g for g in gs if isinstance(g, dict)}
         if "main" not in groups:
             errs.append(f"{tag}: 缺 main 组")
@@ -133,6 +198,9 @@ def validate(doc):
         errs.extend(_check_branches(q, tag))
         for r in q.get("reveal", []):
             own_keys = {o.get("key") for g in q.get("groups", []) for o in g.get("options", [])}
+            if KEY_BAD.search(str(r.get("when", ""))):
+                errs.append(f"{tag}: reveal.when「{r.get('when')}」含空白或算子字符 —— 它会"
+                            f"原样拼进 data-when=\"q{no}=<when>\",条件显隐将永不命中")
             if str(r.get("when")) not in own_keys:
                 errs.append(f"{tag}: reveal.when「{r.get('when')}」不是本题任何选项的 key")
 
@@ -141,27 +209,34 @@ def validate(doc):
             if not isinstance(it, dict):
                 errs.append(f"links.{kind}: 条目必须是对象,实际「{it!r}」")
                 continue
+            if it.get("when") is not None:
+                errs.extend(_check_when_expr(it["when"], f"links.{kind}"))
             errs.extend(_check_link(kind, it, layer_of))
+    errs.extend(_check_carry_refs(doc))
 
     return errs
 
 
-def code_rev():
-    """当前仓库的 HEAD。单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。
-    仓库外运行(chat/agent 环境)返回空串。"""
+def code_rev(root="."):
+    """`root` 那个仓库的 HEAD —— 必须是 root,不是 cwd:cites 的路径行号是相对 root 解析的,
+    拿 cwd 的 sha 会让抬头声称一个和被引用代码毫无关系的出处,且没有任何提示。
+    单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。
+    非仓库(chat/agent 环境)返回空串。"""
     import subprocess
     try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
-                              text=True, timeout=5).stdout.strip()
+        return subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=5).stdout.strip()
     except Exception:
         return ""
 
 
-def render_html(doc, template):
-    """把题目数据注入模板的 qdata 块。模板不含任何项目内容,数据只此一处。"""
+def render_html(doc, template, root="."):
+    """把题目数据注入模板的 qdata 块。模板不含任何项目内容,数据只此一处。
+    `root` 与 CLI 的 --root 同义:cites/rules_ref 的路径相对它解析,code_rev 也取它的 HEAD。"""
     if PLACEHOLDER not in template:
         raise ValueError(f"模板缺占位符 {PLACEHOLDER}")
-    doc = {**doc, "doc": {**doc["doc"], "code_rev": doc["doc"].get("code_rev") or code_rev()}}
+    doc = {**doc, "doc": {**doc["doc"],
+                          "code_rev": doc["doc"].get("code_rev") or code_rev(root)}}
     # </script> 会提前闭合数据块;JSON 里的 < 一律转义,不影响 json.loads
     payload = json.dumps(doc, ensure_ascii=False).replace("<", "\\u003c")
     return template.replace(PLACEHOLDER, payload)
@@ -318,7 +393,7 @@ def main():
     if args.check:
         return
     out = Path(args.out or f"confirm-{doc['doc']['id']}-r{doc['doc']['round']}.html")
-    out.write_text(render_html(doc, TEMPLATE_PATH.read_text(encoding="utf-8")),
+    out.write_text(render_html(doc, TEMPLATE_PATH.read_text(encoding="utf-8"), args.root),
                    encoding="utf-8")
     print(f"✓ 已出包 {out}（{out.stat().st_size // 1024} KB，单文件自包含）")
 

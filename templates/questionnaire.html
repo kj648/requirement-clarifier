@@ -643,6 +643,30 @@ function demoHtml(q){
     <table><tbody>${rows}</tbody></table>${assumed}</div>`;
 }
 
+/** links.carry 的 from/to 写作 `<题号>.<字段id>`，字段id 即该题 reveal[].when 的键 ——
+    那个输入框的 DOM id 就是 rv-<题号>-<字段id>。这是 carry 唯一的落点约定，
+    出题时照它写 json；落不到 validate() 会在出包时红字拒收。 */
+function carryDomId(ref){
+  const p = String(ref).split('.');
+  return p.length === 2 ? `rv-${p[0]}-${p[1]}` : null;
+}
+
+/** 把 DOM 形式的 when（q3=B & q2=B）翻成业务读得懂的话（D11/D16：业务面前不出 DOM 内部名）。
+    机读区仍保留原始表达式 —— AI 要解析的是它，不是这句人话。 */
+function whenInWords(expr){
+  return String(expr).split('&').map(t => {
+    const [n, v] = t.split('=');
+    if(v === undefined) return t.trim();
+    const no = (n.trim().replace(/^q/, '').match(/^\d+/) || [''])[0];
+    const q = DATA.questions.find(x => String(x.no) === no);
+    const key = v.trim();
+    const opt = q && (q.groups || []).flatMap(g => g.options || [])
+                     .find(o => String(o.key) === key);
+    const label = opt ? opt.label : (key === 'other' ? '都不是（实际口径见作答区）' : key);
+    return `问题 ${no} 选「${label}」`;
+  }).join('，且 ');
+}
+
 /** schema 用题号（"2=B"），DOM 用输入框 name（"q2=B"）。 */
 function whenToDom(expr){ return String(expr).replace(/(^|[\s&|])(\d+)(?=\s*(?:!=|=))/g, '$1q$2'); }
 
@@ -651,12 +675,21 @@ function questionHtml(q){
   const tags = [
     q.blocking ? '<span class="tag first">请先答</span>' : '',
     `<span class="tag who">建议由 ${esc(who)} 回答</span>`].join('');
-  const reveals = (q.reveal || []).map(r =>
-    `<div class="cond" data-when="q${q.no}=${esc(r.when)}">
+  const reveals = (q.reveal || []).map(r => {
+    const id = `rv-${q.no}-${r.when}`;
+    /* carry：前面填过的事实带到这里当默认值。生产者只此一处 —— 缺了它
+       refreshCarry() 就是只有消费者没有生产者，规格声明的事实传播静默不工作。 */
+    const cy = (DATA.links?.carry || []).find(c => carryDomId(c.to) === id);
+    const srcNo = cy ? String(cy.from).split('.')[0] : null;
+    const cyAttr = cy ? ` data-carry-from="${esc(carryDomId(cy.from))}"`
+                      + ` data-carry-src="${esc('问题 ' + srcNo)}"` : '';
+    return `<div class="cond" data-when="q${q.no}=${esc(r.when)}">
        <div class="cond-hd" data-ask="${esc(r.ask)}">因您选了 ${esc(r.when)}，还要定一件事</div>
-       <div class="fld"><label for="rv-${q.no}-${esc(r.when)}">${esc(r.ask)}</label>
-         <input type="text" id="rv-${q.no}-${esc(r.when)}"></div>
-     </div>`).join('');
+       <div class="fld"><label for="${esc(id)}">${esc(r.ask)}</label>
+         <input type="text" id="${esc(id)}"${cyAttr}>${
+           cy ? '<span class="carry-hint"></span>' : ''}</div>
+     </div>`;
+  }).join('');
   const clash = (DATA.links?.clash || [])
     .filter(c => _when_first_no(c.when) === q.no)
     .map(c => `<div class="clash" data-clash-when="${esc(whenToDom(c.when))}">
@@ -729,7 +762,8 @@ const P1 = (DATA.part1 || []).map(r => r.n);
 const rail = document.getElementById('rail');
 rail.innerHTML = QS.map(q =>
   `<li><a href="#${q.id}" data-q="${q.id}" data-n="${q.dataset.no}"
-      ><span class="dot"></span><span class="t">${q.dataset.no}. ${q.dataset.title.replace(/["""]/g,'')}</span></a></li>`
+      ><span class="dot"></span><span class="t">${esc(q.dataset.no)}. ${
+        esc(q.dataset.title.replace(/["""]/g,''))}</span></a></li>`
 ).join('');
 
 const val = name => (document.querySelector(`input[name="${name}"]:checked`)||{}).value || null;
@@ -809,9 +843,16 @@ function stamp(){
   const d=new Date(), p=n=>String(n).padStart(2,'0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
-/* 跨题联动：cond 表达式支持 & 连接的等值判断 */
+/* 跨题联动：cond 表达式只支持 & 连接的等值判断。
+   `|` / `!=` / `in [...]` 尚未实现 —— validate() 会在出包时拒收，这里再兜一层：
+   拆不出等号的 token 一律不命中，绝不能抛。一抛 refreshAll() 就断在这儿，
+   进度条／身份选择器／导出按钮全失效，而业务屏幕上没有任何提示。 */
 function meets(expr){
-  return expr.split('&').every(t=>{ const [n,v]=t.trim().split('='); return val(n.trim())===v.trim(); });
+  return String(expr).split('&').every(t=>{
+    const [n,v]=t.trim().split('=');
+    if(v===undefined) return false;
+    return val(n.trim())===v.trim();
+  });
 }
 /* derive：前面的选择让后面某组题在逻辑上不存在 → 置为不适用，不算漏答 */
 function refreshNA(){
@@ -858,8 +899,9 @@ function buildWhoRow(){
     [['', '全部'], ...ROLES.map(r=>[r,r])].map(([v,label])=>{
       const mine = QS.filter(q=>ownsRole(q,v));
       const left = mine.filter(q=>!answered(q)).length;
-      return `<button type="button" class="whochip${myRole===(v||null)?' on':''}" data-role="${v}">`
-           + `${label}<span class="c">${mine.length-left}/${mine.length}</span></button>`;
+      return `<button type="button" class="whochip${myRole===(v||null)?' on':''}"`
+           + ` data-role="${esc(v)}">`
+           + `${esc(label)}<span class="c">${mine.length-left}/${mine.length}</span></button>`;
     }).join('');
   row.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{
     myRole = b.dataset.role || null;
@@ -928,7 +970,7 @@ function buildReceipt(){
     cls.forEach(c=>{
       const ta=c.querySelector('textarea');
       L.push('');
-      L.push(`- 条件 \`${c.dataset.clashWhen}\` 同时成立：`
+      L.push(`- ${whenInWords(c.dataset.clashWhen)} —— 两者同时成立：`
         + c.textContent.replace(/\s+/g,' ').trim().slice(0,140) + '…');
       L.push(`  业务说明：${ta && ta.value.trim() ? ta.value.trim() : '（未说明）'}`);
       J.矛盾=J.矛盾||[]; J.矛盾.push({条件:c.dataset.clashWhen, 说明:ta?ta.value.trim():''});
@@ -1056,7 +1098,8 @@ function renderPreview(){
 
   cls.forEach(c=>{
     const ta=c.querySelector('textarea'), said=ta&&ta.value.trim();
-    h += `<div class="rc-clash"><b>⚠ 有一处选择互相打架</b>（${esc(c.dataset.clashWhen)}）：`
+    h += `<div class="rc-clash"><b>⚠ 有一处选择互相打架</b>`
+       + `（${esc(whenInWords(c.dataset.clashWhen))}）：`
        + (said ? `您的说明是「${esc(said)}」，会一起发给开发。` : `您还没写怎么处理——建议回去补一句，否则开发只能再来问一轮。`)
        + '</div>';
   });

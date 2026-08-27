@@ -249,6 +249,52 @@ class TestValidate(unittest.TestCase):
         errs = bq.validate(d)                # 必须返回而不是抛
         self.assertTrue(any("options" in e for e in errs), errs)
 
+    def test_unsupported_when_operator_is_rejected(self):
+        """meets() 只实现了 & 和 = —— 没实现的算子必须在出包时红字,
+        不能让它在业务面前静默瘫痪整页。"""
+        for expr in ("2!=X", "1=A | 2=X", "2 in [A,B]"):
+            d = doc()
+            d["links"]["na"] = [{"when": expr, "target": "2.main", "note": "n"}]
+            errs = bq.validate(d)
+            self.assertTrue(any("when" in e for e in errs), f"{expr}: {errs}")
+
+    def test_supported_when_operator_passes(self):
+        d = doc()
+        d["links"]["na"] = [{"when": "1=A", "target": "2.main", "note": "n"}]
+        self.assertEqual(bq.validate(d), [])
+
+    def test_option_key_with_operator_char_is_rejected(self):
+        """key 原样拼进 data-when 与 radio value,带算子字符条件显隐就永不命中。"""
+        d = doc()
+        d["questions"][1]["groups"][0]["options"] = [{"key": "A|B", "label": "选 A 或 B"}]
+        errs = bq.validate(d)
+        self.assertTrue(any("key" in e for e in errs), errs)
+
+    def test_carry_must_land_on_a_reveal_field(self):
+        """carry 落不到输入框上就是死链路:页面不报错、业务看不出、事实也没传过去。"""
+        d = doc()
+        d["links"]["carry"] = [{"from": "1.A", "to": "2.nope", "kind": "fact"}]
+        errs = bq.validate(d)
+        self.assertTrue(any("carry" in e for e in errs), errs)
+
+    def test_carry_resolving_to_reveal_fields_passes(self):
+        d = doc()
+        d["questions"][1]["reveal"] = [{"when": "X", "ask": "X 的细则"}]
+        d["links"]["carry"] = [{"from": "1.A", "to": "2.X", "kind": "fact"}]
+        self.assertEqual(bq.validate(d), [])
+
+
+class TestCodeRev(unittest.TestCase):
+    def test_non_repo_returns_empty_string_not_exception(self):
+        """code_rev 取的是 root 的 HEAD;root 不是仓库时返回空串,不抛、也不退回 cwd 的 sha
+        —— 拿 cwd 的 sha 会让抬头声称一个和被引用代码毫无关系的出处。"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(bq.code_rev(d), "")
+
+    def test_root_repo_head_is_used(self):
+        self.assertRegex(bq.code_rev(Path(__file__).resolve().parents[1]), r"^[0-9a-f]{40}$")
+
 
 if __name__ == "__main__":
     unittest.main()
