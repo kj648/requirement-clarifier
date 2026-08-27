@@ -153,13 +153,15 @@
   挡的是手滑，不是刻意绕过——同义改写（比如「个人倾向于选 A，改动最小」）照样
   能混过去；真要做语义判断得靠模型，进不了 CI，只能留给独立盲审（见二之四）。
 - **纯偏好／成本敏感类**（格式、时点、入口位置）→ `advice_allowed: true`，
-  可另写一句「开发建议：选 X（理由：省 N 天／顺现有结构）」以加速回填。
+  可在 `cost` 里写「开发建议：选 X（理由：省 N 天／顺现有结构）」以加速回填。
 
-**`advice_allowed` 管的是建议措辞，不是 `cost`。** `cost` 是「选这一项的代价／
-影响」，**两档都要写、两条产物（HTML 与 md）都会渲染**。规则／账务口径题
-（`advice_allowed: false`）恰恰是最需要看代价的一档，按 `advice_allowed` 过滤
-`cost` 会给业务一张剥掉了全部代价的决策单。反过来，`cost` 也不要兼职装建议：
-建议措辞由 `ADVICE_WORDS` 扫 `label` 与 `cost`，塞进 `cost` 会被拒收。
+**`advice_allowed` 管的是 `cost` 里能不能装建议措辞，不是要不要写 `cost`。**
+`cost` 是「选这一项的代价／影响」，**两档都要写、两条产物（HTML 与 md）都会
+渲染**。规则／账务口径题（`advice_allowed: false`）恰恰是最需要看代价的一档，
+按 `advice_allowed` 过滤 `cost` 会给业务一张剥掉了全部代价的决策单。
+`advice_allowed: false` 档下 `cost` 不要兼职装建议：建议措辞由 `ADVICE_WORDS`
+扫 `label` 与 `cost`，塞进 `cost` 会被拒收；`advice_allowed: true` 档下 `cost`
+就是建议的合法落点——上面「可在 `cost` 里写」说的正是这个。
 
 这一条是本 skill 与通用 grill 类技能的分界：`grilling` 对每题都给推荐答案，
 因为它面对的是**开发者自己**，答错自己担；确认单面对的是**第三方业务方**。

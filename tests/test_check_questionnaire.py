@@ -65,6 +65,30 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("未表态", out)
         self.assertNotIn("第一部分", out)
 
+    def test_md_part1_checked_mute_is_counted(self):
+        """md 的三态在同一单元格里 —— 勾中「未表态」必须被计数,
+        否则业务一条都不核对、机检照样放行(HTML 路径的同一漏洞已修,这是另一条腿)。"""
+        code, out = run("receipt-md-part1-mute.md")
+        self.assertIn("2 条『未表态』", out)
+
+    def test_md_blank_part1_does_not_count_unchecked_mute(self):
+        """空白单每行自带未勾选的「☐ 未表态」—— 不得计入,否则每份没动过的单子都误报。"""
+        import tempfile
+        p = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "build_questionnaire.py"),
+             str(ROOT / "examples/demo-project/docs/requirements/questionnaires"
+                        "/2026-07-11-逾期提醒-r1.json"),
+             "--md", str(Path(tempfile.mkdtemp()) / "blank.md")],
+            capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        blank_path = Path(p.args[-1])
+        blank = blank_path.read_text(encoding="utf-8")
+        f = Path(tempfile.mkdtemp()) / "blank-receipt.md"
+        f.write_text(blank, encoding="utf-8")
+        r = subprocess.run([sys.executable, str(SCRIPT), str(f)],
+                           capture_output=True, text=True)
+        self.assertNotIn("『未表态』", r.stdout, r.stdout)
+
 
 class TestFieldValueDoesNotCrossFieldBoundaries(unittest.TestCase):
     """C2 回归:`[^\\s:：]*` 会让空字段捕获到下一个字段的标签名(填写人 → '部门'),
