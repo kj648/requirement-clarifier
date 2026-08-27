@@ -111,7 +111,10 @@ class TestRenderHtml(unittest.TestCase):
         import re as _re
         css = _re.search(r"<style>(.*?)</style>", self.tpl, _re.S).group(1)
         # 找出所有声明了 flex-basis:100% 的规则的选择器
-        wants_own_row = _re.findall(r"([^{}]+)\{[^{}]*flex\s*:\s*0\s+1\s+100%", css)
+        # flex:0 1 100% 与 flex-basis:100% 是等价写法,两种都要认 ——
+        # 只认一种的守卫，遇到另一种就静默失效，而这条测试存在的意义就是防静默。
+        wants_own_row = _re.findall(
+            r"([^{}]+)\{[^{}]*(?:flex\s*:\s*\d+\s+\d+\s+100%|flex-basis\s*:\s*100%)", css)
         self.assertTrue(wants_own_row, "样本失效:模板里已无 flex:0 1 100% 的规则,请更新此测试")
         for sel in wants_own_row:
             sel = sel.strip().lstrip(".")
