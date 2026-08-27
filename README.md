@@ -120,7 +120,7 @@ requirement-clarifier/
 **方式一：clone 到 skill 目录（推荐）**
 
 ```bash
-git clone https://github.com/JK-yan/requirement-clarifier.git \
+git clone https://github.com/kj648/requirement-clarifier.git \
   ~/.config/opencode/skills/requirement-clarifier
 ```
 
@@ -128,7 +128,7 @@ git clone https://github.com/JK-yan/requirement-clarifier.git \
 
 **方式二：导入 .skill 包**
 
-从 [GitHub Releases](https://github.com/JK-yan/requirement-clarifier/releases) 下载 `requirement-clarifier.skill` 文件，按各平台指引导入。
+从 [GitHub Releases](https://github.com/kj648/requirement-clarifier/releases) 下载 `requirement-clarifier.skill` 文件，按各平台指引导入。
 
 ## 打包与发布
 
