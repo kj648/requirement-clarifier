@@ -40,7 +40,7 @@ body{
   background-image:linear-gradient(var(--rule-2) 1px,transparent 1px);
   background-size:100% 30px;
 }
-.wrap{max-width:1140px;margin:0 auto;padding:28px 20px 120px}
+.wrap{max-width:920px;margin:0 auto;padding:28px 20px 120px}
 
 /* ── 单据抬头 ───────────────────────────────── */
 .masthead{
@@ -102,11 +102,25 @@ h1{
   outline:2px solid var(--blue);outline-offset:2px
 }
 
-/* ── 主体两栏 ───────────────────────────────── */
-.body{display:grid;grid-template-columns:180px 1fr;gap:36px;margin-top:26px;align-items:start}
-
-/* 题号索引 */
-.rail{position:sticky;top:74px}
+/* ── 题号索引:最左侧悬浮栏,可收起 ───────────── */
+main{display:block;margin-top:26px}
+.rail{
+  position:fixed;left:0;top:96px;bottom:24px;width:216px;z-index:30;
+  background:var(--sheet);border:1px solid var(--rule);border-left:none;
+  padding:14px 12px;overflow-y:auto;
+  box-shadow:2px 0 10px rgba(24,35,43,.07);
+  transition:transform .18s ease;
+}
+.rail.collapsed{transform:translateX(-100%)}
+.rail-toggle{
+  position:fixed;left:0;top:96px;z-index:31;
+  width:28px;padding:10px 0;cursor:pointer;
+  background:var(--ink);color:#fff;border:none;font:inherit;
+  font-size:12px;line-height:1.4;
+  writing-mode:vertical-rl;letter-spacing:.14em;
+  transition:left .18s ease;
+}
+.rail:not(.collapsed) ~ .rail-toggle{left:216px}
 .rail-hd{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--ink-45);margin-bottom:10px}
 .rail ol{list-style:none;margin:0;padding:0}
 .rail li{margin:0}
@@ -415,14 +429,8 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
   color:var(--ink-45);word-break:break-all}
 
 @media (max-width:860px){
-  .body{grid-template-columns:1fr;gap:18px}
-  .rail{position:static;border-bottom:1px solid var(--rule);padding-bottom:var(--s-2)}
-  .rail ol{display:flex;overflow-x:auto;gap:2px}
-  .rail a{flex-direction:column;align-items:center;padding:6px 9px;border-left:none;border-bottom:2px solid transparent}
-  .rail a.on{border-bottom-color:var(--blue)}
-  .rail .t{display:none}
-  .rail .dot{margin:0}
-  .rail a::after{content:attr(data-n);font-family:var(--mono);font-size:var(--t-label)}
+  /* 窄屏下索引栏走桌面同一套 fixed + 把手样式(默认收起,由 JS 按视口宽度判断),
+     这里不再单独铺横向滚动布局 —— 展开时以浮层盖住正文是可接受的。 */
   .masthead{flex-direction:column-reverse;gap:14px}
   .seal{align-self:flex-start}
   .sign-grid{grid-template-columns:1fr 1fr}
@@ -436,8 +444,7 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
   /* @page 已经给了纸张边距;.wrap 屏幕上留的 padding（尤其底部 120px，是给固定 .dock
      条留的位置，打印时 .dock 已隐藏）叠加上去会在末页留出约 47mm 的纯空白 */
   .wrap{padding:0}
-  .statusbar,.dock,.rail,.howto,.deny,.ev summary::after{display:none!important}
-  .body{grid-template-columns:1fr;gap:0}
+  .statusbar,.dock,.rail,.rail-toggle,.howto,.deny,.ev summary::after{display:none!important}
   .q,.masthead,.signoff,.ledger tr,.demo{break-inside:avoid}
   .cond,.ev,.ev-b,.coords{display:block!important}
   .seal{border-color:#000;color:#000}
@@ -477,17 +484,17 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
   <button class="btn ghost" type="button" onclick="jumpNext()">跳到下一道未答</button>
   <div class="whorow" id="whoRow"></div>
 </div>
-<div class="body">
-  <nav class="rail" aria-label="题号索引">
-    <div class="rail-hd">题号索引</div>
-    <ol id="rail"></ol>
-  </nav>
-  <main>
-    <section class="part" id="part1"></section>
-    <section class="part" id="part2"></section>
-    <section class="signoff" id="signoff"></section>
-  </main>
-</div>
+<nav class="rail" id="railNav" aria-label="题号索引">
+  <div class="rail-hd">题号索引</div>
+  <ol id="rail"></ol>
+</nav>
+<button class="rail-toggle" id="railToggle" type="button"
+  onclick="toggleRail()" aria-controls="railNav" aria-expanded="true"></button>
+<main>
+  <section class="part" id="part1"></section>
+  <section class="part" id="part2"></section>
+  <section class="signoff" id="signoff"></section>
+</main>
 </div>
 
 <div class="dock">
@@ -830,6 +837,35 @@ rail.innerHTML = QS.map(q =>
       ><span class="dot"></span><span class="t">${esc(q.dataset.no)}. ${
         esc(q.dataset.title.replace(/["""]/g,''))}</span></a></li>`
 ).join('');
+
+/* 索引悬浮栏的展开/收起:窄屏默认收起,用户手动点过就记住选择并覆盖默认。
+   RAIL_BREAKPOINT 留了 920(正文) + 2×216(栏宽) 的余量,小于它时展开会压住正文。 */
+const railNav = document.getElementById('railNav');
+const railToggle = document.getElementById('railToggle');
+const RAIL_BREAKPOINT = 1360;
+let railUserPref = null;
+try{ railUserPref = localStorage.getItem('rc-rail'); }catch(e){}
+
+function setRailCollapsed(collapsed){
+  railNav.classList.toggle('collapsed', collapsed);
+  railToggle.textContent = collapsed ? '题号索引 ▶' : '◀ 收起';
+  railToggle.setAttribute('aria-expanded', String(!collapsed));
+}
+function applyRailDefault(){
+  if(railUserPref === 'open'){ setRailCollapsed(false); return; }
+  if(railUserPref === 'closed'){ setRailCollapsed(true); return; }
+  setRailCollapsed(window.innerWidth < RAIL_BREAKPOINT);
+}
+function toggleRail(){
+  const collapsed = !railNav.classList.contains('collapsed');
+  setRailCollapsed(collapsed);
+  railUserPref = collapsed ? 'closed' : 'open';
+  try{ localStorage.setItem('rc-rail', railUserPref); }catch(e){}
+}
+applyRailDefault();
+window.addEventListener('resize', () => {
+  if(railUserPref === null) setRailCollapsed(window.innerWidth < RAIL_BREAKPOINT);
+});
 
 const val = name => (document.querySelector(`input[name="${name}"]:checked`)||{}).value || null;
 const txt = id => { const el=document.getElementById(id); return el ? el.value.trim() : ''; };
