@@ -33,8 +33,9 @@
 **Interfaces:**
 - Consumes: 无
 - Produces:
-  - `validate(doc: dict) -> list[str]` — 返回错误消息列表，空列表表示通过。**不抛异常**。
-  - 模块级常量 `ADVICE_WORDS: re.Pattern` — 建议措辞探测。
+  - `validate(doc: dict) -> list[str]` — 纯函数（结构与语义），返回错误消息列表，空列表表示通过。**不抛异常、不摸文件系统**。
+  - `validate_refs(doc: dict, root: str | Path) -> list[str]` — 摸文件系统的部分：`rules_ref[].doc` 存在、条目编号找得到、`text` 没和规则文档漂移。`cites` 的路径行号真伪归 `verify_evidence.py`，不重复实现。
+  - 模块级常量 `ADVICE_WORDS: re.Pattern`、`RULE_ENTRY: re.Pattern`。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -192,6 +193,72 @@ class TestValidate(unittest.TestCase):
                                      "rows": [{"when": ["X"], "v": "1"}]}
         self.assertEqual(bq.validate(d), [])
 
+    def test_over_threshold_requires_rules_ref(self):
+        """分支 >2 就该沉淀进 rules/，不该 inline 在题目里。"""
+        d = doc()
+        d["questions"][0]["evidence"]["cites"][0]["branches"] = [
+            {"cond": "c1", "then": "t1"}, {"cond": "c2", "then": "t2"},
+            {"cond": "c3", "then": "t3"}]
+        errs = bq.validate(d)
+        self.assertTrue(any("rules_ref" in e for e in errs), errs)
+
+    def test_over_threshold_satisfied_by_rules_ref(self):
+        d = doc()
+        ev = d["questions"][0]["evidence"]
+        ev["cites"][0]["branches"] = [
+            {"cond": "c1", "then": "t1"}, {"cond": "c2", "then": "t2"},
+            {"cond": "c3", "then": "t3"}]
+        ev["rules_ref"] = [{"id": "R1", "doc": "docs/requirements/rules/x.md",
+                            "text": "规则一句话"}]
+        self.assertEqual(bq.validate(d), [])
+
+    def test_multi_file_code_cites_require_rules_ref(self):
+        d = doc()
+        d["questions"][0]["evidence"]["cites"].append(
+            {"kind": "code", "path": "b.py", "line": 2, "snippet": "y = 2",
+             "logic": "另一处", "entry": "api.py:9",
+             "branches": [{"cond": "总是", "then": "y = 2"}]})
+        errs = bq.validate(d)
+        self.assertTrue(any("跨" in e and "rules_ref" in e for e in errs), errs)
+
+    def test_reused_logic_text_requires_rules_ref(self):
+        """同一句 logic 出现在两道题里 —— 该沉淀，不该抄两遍。"""
+        d = doc()
+        d["questions"][1]["evidence"] = {
+            "tier": "code",
+            "cites": [{"kind": "code", "path": "a.py", "line": 1, "snippet": "x = 1",
+                       "logic": "取值为 1，没有其它赋值点",
+                       "entry": "api.py:9",
+                       "branches": [{"cond": "总是", "then": "x = 1"}]}]}
+        errs = bq.validate(d)
+        self.assertTrue(any("复用" in e for e in errs), errs)
+
+    def test_logic_optional_when_rules_ref_given(self):
+        """业务概念由规则文档承载时，题目里不必再抄一份 logic。"""
+        d = doc()
+        ev = d["questions"][0]["evidence"]
+        del ev["cites"][0]["logic"]
+        ev["rules_ref"] = [{"id": "R1", "doc": "docs/requirements/rules/x.md",
+                            "text": "规则一句话"}]
+        self.assertEqual(bq.validate(d), [])
+
+    def test_reviewed_fields_complete_when_present(self):
+        d = doc()
+        d["questions"][0]["evidence"]["reviewed"] = {"by": "独立盲审"}
+        errs = bq.validate(d)
+        self.assertTrue(any("reviewed" in e for e in errs), errs)
+
+    def test_reviewed_with_diffs_requires_note(self):
+        d = doc()
+        d["questions"][0]["evidence"]["reviewed"] = {
+            "by": "独立盲审", "on": "2026-08-27", "diffs": 2}
+        errs = bq.validate(d)
+        self.assertTrue(any("note" in e for e in errs), errs)
+
+    def test_reviewed_is_optional(self):
+        """没审也能出包 —— 页面如实标『未经独立复核』，不拦。"""
+        self.assertEqual(bq.validate(doc()), [])
+
     def test_reveal_when_must_be_own_option_key(self):
         d = doc()
         d["questions"][0]["reveal"] = [{"when": "Z", "ask": "不存在的选项"}]
@@ -227,7 +294,14 @@ Create `scripts/build_questionnaire.py`：
 3. 分支对称: 同一 main 组内若部分选项有后续、部分没有,没有后续的必须显式标 terminal
    ——一次性发单、异步回填,中间没有 AI 追问,漏掉的分支要等一整轮才能补。
 4. 建议措辞: advice_allowed=false 的题,任何选项不得出现建议措辞(防锚定替答)。
-另: evidence.tier 为 src/code 必须有 cites;为 guess 必须写 weak(无据也要说清哪儿没据)。
+5. 业务概念层: code 引用超过 inline 阈值(分支>2 / 跨多文件 / logic 被别题复用)
+   必须沉淀进 rules/<模块名>.md 并给 rules_ref —— 否则同一段逻辑抄三遍、写不一致、
+   拼不出整体、读代码的理解无处沉淀。
+另: evidence.tier 为 src/code 必须有 cites;为 guess 必须写 weak(无据也要说清哪儿没据);
+reviewed(独立盲审记录)选填,但填了字段要完整,diffs>0 必须写 note。
+
+纯逻辑校验(validate)与摸文件系统的校验(validate_refs)分开:前者任何环境可跑,
+后者要项目根。cites 的路径行号真伪归 verify_evidence.py,不在此重复实现。
 """
 import argparse
 import json
@@ -237,6 +311,7 @@ from pathlib import Path
 
 TIERS = ("src", "code", "guess")
 ADVICE_WORDS = re.compile(r"开发建议|建议选|推荐选|我的默认建议")
+RULE_ENTRY = re.compile(r"^##\s*(?P<id>R\d+)\.\s*(?P<text>.*)$", re.M)
 # when 表达式里的题号引用:  "1=B"、"4=B & 1=B"、"7.crm!=x"
 WHEN_REF = re.compile(r"(?<![\w.])(\d+)\s*(?:\.\w+)?\s*(?:!=|=)")
 
@@ -256,6 +331,13 @@ def validate(doc):
 
     role_ids = {r.get("id") for r in doc["roles"]}
     layer_of = {q.get("no"): q.get("layer", 1) for q in doc["questions"]}
+    # 同一句 logic 出现在多道题里 → 该沉淀进 rules/,不该抄两遍
+    logic_counts = {}
+    for q in doc["questions"]:
+        for c in (q.get("evidence") or {}).get("cites", []) or []:
+            if c.get("kind") == "code" and c.get("logic"):
+                k = _norm(c["logic"])
+                logic_counts[k] = logic_counts.get(k, 0) + 1
 
     for q in doc["questions"]:
         no = q.get("no")
@@ -279,6 +361,8 @@ def validate(doc):
             errs.append(f"{tag}: tier=guess 必须写 weak,说明哪儿没据、为什么还问")
 
         errs.extend(_check_code_cites(ev, tier, tag))
+        errs.extend(_check_rules_threshold(ev, tag, logic_counts))
+        errs.extend(_check_reviewed(ev, tag))
         errs.extend(_check_demo(q, ev, tag))
 
         if not q.get("advice_allowed", False):
@@ -303,15 +387,73 @@ def validate(doc):
     return errs
 
 
+def _norm(s):
+    return re.sub(r"\s+", "", str(s))
+
+
+def _check_rules_threshold(ev, tag, logic_counts):
+    """超过阈值的逻辑必须沉淀进 rules/,不许 inline 在题目里(D19)。"""
+    code_cites = [c for c in ev.get("cites", []) if c.get("kind") == "code"]
+    if not code_cites or ev.get("rules_ref"):
+        return []
+    files = {c.get("path") for c in code_cites}
+    max_br = max((len(c.get("branches") or []) for c in code_cites), default=0)
+    why = []
+    if max_br > 2:
+        why.append(f"分支 {max_br} 条(>2)")
+    if len(files) > 1:
+        why.append(f"跨 {len(files)} 个文件")
+    if any(logic_counts.get(_norm(c.get("logic", "")), 0) > 1 for c in code_cites):
+        why.append("logic 文本被别的题复用")
+    if not why:
+        return []
+    return [f"{tag}: {'、'.join(why)} —— 超过 inline 阈值,必须沉淀进 "
+            f"rules/<模块名>.md 并给 rules_ref;同一段逻辑抄多遍会写不一致、也拼不出整体"]
+
+
+def _check_reviewed(ev, tag):
+    """reviewed 选填 —— 没审也能出包,页面如实标『未经独立复核』。填了就要完整。"""
+    rv = ev.get("reviewed")
+    if rv is None:
+        return []
+    errs = [f"{tag}: reviewed 缺 `{f}`" for f in ("by", "on", "diffs")
+            if rv.get(f) in (None, "")]
+    if not errs and int(rv.get("diffs") or 0) > 0 and not str(rv.get("note") or "").strip():
+        errs.append(f"{tag}: reviewed.diffs>0 必须写 `note` —— 盲审发现的差异怎么处理的要留痕")
+    return errs
+
+
+def validate_refs(doc, root):
+    """摸文件系统的校验:规则文档存在、条目编号找得到、text 没和文档漂移。"""
+    errs, root = [], Path(root)
+    for q in doc.get("questions", []):
+        for r in (q.get("evidence") or {}).get("rules_ref") or []:
+            tag = f"问题 {q.get('no')}"
+            f = root / str(r.get("doc", ""))
+            if not f.is_file():
+                errs.append(f"{tag}: rules_ref 指向的规则文档不存在: {r.get('doc')}")
+                continue
+            body = f.read_text(encoding="utf-8", errors="replace")
+            m = next((m for m in RULE_ENTRY.finditer(body) if m.group("id") == r.get("id")), None)
+            if not m:
+                errs.append(f"{tag}: {r.get('doc')} 里找不到条目 {r.get('id')}")
+                continue
+            if _norm(r.get("text", "")) not in _norm(body[m.start():m.start() + 800]):
+                errs.append(f"{tag}: rules_ref {r.get('id')} 的 text 与 {r.get('doc')} 里的"
+                            f"条目不一致 —— 规则文档改过了,题目里的副本没跟上")
+    return errs
+
+
 def _check_code_cites(ev, tier, tag):
     """code 档的失败模式不是『原话被改写』,而是『单点引用冒充整体逻辑』。
     一行赋值不证明它是唯一赋值点、没有别处覆盖、没有 flag 短路。"""
     errs, code_cites = [], [c for c in ev.get("cites", []) if c.get("kind") == "code"]
+    has_rules = bool(ev.get("rules_ref"))
     for c in code_cites:
         where = f"{c.get('path')}:{c.get('line')}"
-        if not str(c.get("logic") or "").strip():
+        if not has_rules and not str(c.get("logic") or "").strip():
             errs.append(f"{tag}: code 引用 {where} 缺 `logic` —— 要有一句白话说清"
-                        f"这段代码实际做什么,给业务否掉的机会")
+                        f"这段代码实际做什么,给业务否掉的机会（或改为引 rules_ref）")
         if not str(c.get("entry") or "").strip():
             errs.append(f"{tag}: code 引用 {where} 缺 `entry` —— 业务问的是『页面上』,"
                         f"得指出这段逻辑从哪个页面/接口进来")
@@ -382,10 +524,11 @@ def main():
     ap.add_argument("-o", "--out")
     ap.add_argument("--md")
     ap.add_argument("--check", action="store_true", help="只校验不出包")
+    ap.add_argument("--root", default=".", help="项目根,用于解析 rules_ref 的路径")
     args = ap.parse_args()
 
     doc = json.loads(Path(args.json_path).read_text(encoding="utf-8"))
-    errs = validate(doc)
+    errs = validate(doc) + validate_refs(doc, args.root)
     for e in errs:
         print(f"  ✗ {e}")
     if errs:
@@ -403,7 +546,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: 运行测试，确认通过**
 
 Run: `python3 -m unittest discover -s tests -p 'test_build*.py' -v`
-Expected: PASS，18 个测试
+Expected: PASS，26 个测试
 
 - [ ] **Step 5: 写 schema 契约文档**
 
@@ -537,7 +680,9 @@ git commit -m "feat: questionnaire.json 契约与校验器
 先有真实数据，Task 3 的渲染器才有东西可渲染。沿用 `examples/demo-project` 已有的逾期提醒案例，引用真实的归档原话行号。
 
 **Files:**
+- Create: `templates/rules-template.md`（规则文档骨架，原来只有口头描述没有模板）
 - Create: `examples/demo-project/app/reminder_rules.py`（桩件，让样例能演示 `code` 档证据）
+- Create: `examples/demo-project/docs/requirements/rules/reminder.md`（从源码逆向出的业务概念层）
 - Create: `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json`
 - Modify: `examples/README.md`
 - Test: `tests/test_example_questionnaire.py`
@@ -568,6 +713,16 @@ class TestExample(unittest.TestCase):
 
     def test_example_passes_validation(self):
         self.assertEqual(bq.validate(self.doc), [])
+
+    def test_example_passes_ref_validation(self):
+        """rules_ref 的条目编号与 text 必须和规则文档对得上。"""
+        self.assertEqual(bq.validate_refs(self.doc, ROOT / "examples/demo-project"), [])
+
+    def test_example_demonstrates_rules_ref_and_review(self):
+        """样例要演示业务概念层与盲审留痕，否则读者看不到这两件事长什么样。"""
+        evs = [q["evidence"] for q in self.doc["questions"]]
+        self.assertTrue(any(e.get("rules_ref") for e in evs), "样例应有一道题引 rules_ref")
+        self.assertTrue(any(e.get("reviewed") for e in evs), "样例应有一道题带 reviewed")
 
     def test_example_exercises_all_three_link_kinds(self):
         links = self.doc["links"]
@@ -672,7 +827,77 @@ def should_remind(bill, today, sent_times):
 以及测试如何逐条核验这些坐标是真的。真实项目里对应的是你自己的代码。
 ```
 
-- [ ] **Step 4: 写样例 json**
+- [ ] **Step 4: 写规则模板与样例规则文档**
+
+先建模板。`SKILL.md` 原来只描述了"做成勾选格式——每条留有效/已废弃/需修改位"，没有模板文件。
+
+Create `templates/rules-template.md`：
+
+```markdown
+# 规则文档：<来源名>
+> 来源：<Excel 导出件 / 源码模块> · 逆向日期 · 逆向人 · **规则 owner：<谁能裁决这些规则>**
+> 代码依据取自 <code_rev>（源码逆向时填；这之后代码若变动，条目需重新确认）
+
+每条请 owner 勾一个：☐ 有效　☐ 已废弃　☐ 需修改（写明怎么改）
+**未勾选的按【假设】处理，不得作为开发依据。**
+
+## R1. <一句业务语言的规则——业务能看懂，不出现表结构/字段名/接口>
+
+☐ 有效　☐ 已废弃　☐ 需修改：______
+
+> 证据: <path>:<line> | "<原文片段>"
+
+- 入口：`<path:line>`（源码逆向时填，指出这条规则从哪个页面/接口进来）
+- 分支：
+  - <条件> → <结果>（`<path:line>`）
+  - <条件> → <结果>（`<path:line>`）
+- 分支是否穷举：☐ 是　☐ 否（说明：______）
+- 独立复核：☐ 未复核　☐ 已盲审（日期 ____ / 差异 __ 处 / 处置：______）
+```
+
+再写样例规则文档。**注意分支有三条**——最初我只列了两条（余额 ≤ 0 和已逾期），漏了"未逾期"那条，这本身就是"单点引用冒充整体逻辑"的活例子，正好用来演示盲审抓到了什么。
+
+Create `examples/demo-project/docs/requirements/rules/reminder.md`：
+
+```markdown
+# 规则文档：逾期提醒（源码逆向）
+> 来源：源码模块 `app/reminder_rules.py` · 逆向 2026-07-11 · 逆向人：开发 · **规则 owner：财务 王芳**
+> 代码依据取自 HEAD（这之后代码若变动，条目需重新确认）
+
+每条请 owner 勾一个：☐ 有效　☐ 已废弃　☐ 需修改（写明怎么改）
+**未勾选的按【假设】处理，不得作为开发依据。**
+
+## R1. 没填账期的单子不算逾期，一直不会触发提醒
+
+☐ 有效　☐ 已废弃　☐ 需修改：______
+
+> 证据: app/reminder_rules.py:10 | "if bill.due_date is None:"
+
+- 入口：`app/reminder_rules.py:9`
+- 分支：
+  - 没有到期日 → 不算逾期（`app/reminder_rules.py:11`）
+  - 有到期日 → 过了到期日才算逾期（`app/reminder_rules.py:12`）
+- 分支是否穷举：☐ 是　☐ 否（说明：______）
+- 独立复核：☐ 未复核　☐ 已盲审（日期 ____ / 差异 __ 处 / 处置：______）
+
+## R3. 已还清的判定：余额清零即视为已还清，不看单子的状态字段
+
+☐ 有效　☐ 已废弃　☐ 需修改：______
+
+> 证据: app/reminder_rules.py:18 | "if bill.balance <= 0:"
+
+- 入口：`app/reminder_rules.py:15`
+- 分支：
+  - 还没到逾期 → 不提醒（`app/reminder_rules.py:17`）
+  - 余额 ≤ 0 → 不提醒（`app/reminder_rules.py:19`）
+  - 已逾期且余额 > 0 → 提醒，累计发满 3 次为止（`app/reminder_rules.py:20`）
+- 分支是否穷举：☑ 是　☐ 否（说明：______）
+- 独立复核：☐ 未复核　☑ 已盲审（日期 2026-07-11 / 差异 1 处 / 处置：复核方独立读代码时列出了"还没到逾期"这条分支，原稿只写了余额和逾期两条，已补入）
+```
+
+条目编号跳过 R2 是故意的——真实逆向里条目会增删，编号不该被要求连续，`validate_refs` 只按 id 查找。
+
+- [ ] **Step 5: 写样例 json**
 
 Create `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json`。引用的两行原话来自 `raw/2026-07-10-李姐微信语音转述.md` 第 6 行「别发太勤,客户烦。」与第 7 行「对了,提醒完了要是还没还,过几天再提醒一次。」：
 
@@ -757,13 +982,22 @@ Create `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期
       "advice_allowed": false,
       "evidence": {
         "tier": "code",
+        "rules_ref": [{
+          "id": "R3",
+          "doc": "docs/requirements/rules/reminder.md",
+          "text": "已还清的判定：余额清零即视为已还清，不看单子的状态字段"
+        }],
+        "reviewed": {
+          "by": "独立盲审", "on": "2026-07-11", "diffs": 1,
+          "note": "复核方独立读代码时列出了「还没到逾期」这条分支，原稿只写了余额和逾期两条，已补入 R3"
+        },
         "cites": [{
           "kind": "code",
           "path": "app/reminder_rules.py", "line": 18,
           "snippet": "if bill.balance <= 0:",
-          "logic": "代码现在按余额是否 ≤ 0 判定已还清，完全不看单子的状态字段；余额没归零就一直算未还清。",
           "entry": "app/reminder_rules.py:15",
           "branches": [
+            {"cond": "还没到逾期", "then": "不提醒", "cite": "app/reminder_rules.py:17"},
             {"cond": "余额 ≤ 0", "then": "不再提醒", "cite": "app/reminder_rules.py:19"},
             {"cond": "余额 > 0 且已逾期", "then": "提醒，累计发满 3 次为止", "cite": "app/reminder_rules.py:20"}
           ],
@@ -813,16 +1047,17 @@ Create `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期
 `links.na` 的 `when: "2=B"` 与 `target: "2.after_cap"` 是**同一题内的组间依赖**——主问
 决定子问，天然同层，Task 1 的 `_check_link` 已对自引用豁免层级检查。
 
-- [ ] **Step 5: 运行测试，确认通过**
+- [ ] **Step 6: 运行测试，确认通过**
 
 Run: `python3 -m unittest discover -s tests -p 'test_*.py' -v`
 Expected: PASS，全部测试通过（含 `test_cites_point_at_real_archived_lines` —— 它保证
 样例里每条引用真的指向归档原文那一行）
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 7: 提交**
 
 ```bash
-git add examples/demo-project/app/ examples/README.md \
+git add templates/rules-template.md examples/demo-project/app/ examples/README.md \
+        examples/demo-project/docs/requirements/rules/ \
         examples/demo-project/docs/requirements/questionnaires/ \
         tests/test_example_questionnaire.py
 git commit -m "feat: 逾期提醒样例 questionnaire.json
@@ -832,7 +1067,13 @@ git commit -m "feat: 逾期提醒样例 questionnaire.json
 指向归档原文那一行、code 档的 entry 与每个 branch 的 cite 也是真坐标，防编造。
 
 加了 app/reminder_rules.py 桩件：样例原本只有 docs/，演示不到 code 档——而 code 档
-恰恰是最容易『单点引用冒充整体逻辑』的一类。"
+恰恰是最容易『单点引用冒充整体逻辑』的一类。
+
+问题 4 走业务概念层：三条分支超过 inline 阈值，逻辑沉淀进 rules/reminder.md 的 R3，
+题目只引条目编号 + 业务语言那一句。R3 的 reviewed 记录了盲审真实抓到的东西——原稿
+漏了『还没到逾期』这条分支，这正是单点引用会漏掉的那类东西。
+
+同时补 templates/rules-template.md：SKILL.md 原来只描述了勾选格式，没有模板文件。"
 ```
 
 ---
@@ -911,8 +1152,13 @@ class TestRenderHtml(unittest.TestCase):
         self.assertTrue(data["doc"].get("code_rev"), "build 应自动填入 code_rev")
 
     def test_logic_is_marked_as_developer_reading(self):
-        """logic 是开发对代码的解读,页面必须标明,不能让业务当成自己说过的话。"""
+        """业务概念那句是开发对代码的解读,页面必须标明,不能让业务当成自己说过的话。"""
         self.assertIn("这是开发读代码得出的理解", self.tpl)
+        self.assertIn("由开发读代码逆向", self.tpl)
+
+    def test_unreviewed_state_is_visible(self):
+        """没做盲审就得如实说,不能让『有代码依据』看起来等于『已核实』。"""
+        self.assertIn("未经独立复核", self.tpl)
 
 
 if __name__ == "__main__":
@@ -1040,10 +1286,47 @@ function citeHtml(c){
     </div>`;
 }
 
+/* 业务概念层：有 rules_ref 就显示规则条目那句业务语言，代码坐标留给内层。 */
+function rulesHtml(ev){
+  return (ev.rules_ref || []).map(r =>
+    `<div class="cite rule-cite">
+       <div class="logic"><b>系统现在的规则是：</b>${esc(r.text)}
+         <span class="logic-note">（引自规则文档 ${esc(r.id)}，由开发读代码逆向、交规则
+           owner 验真——不对请直接指出）</span></div>
+       <details class="coords"><summary>规则文档位置（开发看）</summary>
+         <div><code>${esc(r.doc)} · ${esc(r.id)}</code></div></details>
+     </div>`).join('');
+}
+
+function reviewHtml(ev){
+  const rv = ev.reviewed;
+  if(!rv) return '<div class="unreviewed">未经独立复核——上面这段理解只有一个人读过代码</div>';
+  return `<div class="reviewed">已独立盲审（${esc(rv.on)}，发现 ${rv.diffs} 处差异`
+       + `${rv.diffs > 0 ? '，已处置' : ''}）</div>`;
+}
+
+/* 已有规则条目承载业务语言时，代码引用只出坐标，不再重复一句解读。 */
+function codeCoordsOnly(c){
+  if(c.kind !== 'code') return citeHtml(c);
+  const brs = (c.branches || []).map(b =>
+    `<li>${esc(b.cond)} → ${esc(b.then)}${b.cite ? ` <code>${esc(b.cite)}</code>` : ''}</li>`).join('');
+  return `<details class="coords"><summary>代码位置与分支（开发看）</summary>
+      <div><code>&gt; 证据: ${esc(c.path)}:${c.line} | "${esc(c.snippet)}"</code></div>
+      <div class="entry">入口：<code>${esc(c.entry)}</code></div>
+      ${brs ? `<ul class="brs">${brs}</ul>` : ''}
+      ${c.branches_exhaustive === false
+        ? '<div class="ev-weak">⚠ 分支未读完，本题依据已降为「无据」处理</div>' : ''}
+    </details>`;
+}
+
 function evHtml(q){
   const ev = q.evidence || {}, [label, cls] = TIER_LABEL[ev.tier] || TIER_LABEL.guess;
   const open = (ev.tier === 'guess' || ev.weak) ? ' open' : '';
-  const cites = (ev.cites || []).map(citeHtml).join('')
+  const hasCode = (ev.cites || []).some(c => c.kind === 'code');
+  const cites = (rulesHtml(ev)
+    + (ev.rules_ref?.length ? (ev.cites || []).map(codeCoordsOnly).join('')
+                            : (ev.cites || []).map(citeHtml).join(''))
+    + (hasCode ? reviewHtml(ev) : ''))
     || '<div class="cite none">这道题没有任何来源引用——纯粹是开发从盲区清单推的。</div>';
   return `<details class="ev tier-${cls}"${open}>
       <summary><span class="ev-badge ${cls}">${label}</span>
@@ -1179,7 +1462,25 @@ renderMasthead(); renderPart1(); renderPart2(); renderSignoff();
   L.push(`> 导出于 ${stamp()}（页面自动记录）· 发出 ${DATA.doc.sent_on} · 发出人 ${DATA.doc.sent_by}`);
 ```
 
-并把 `J` 的初始化改为 `{单据: DATA.doc.id, 轮次: DATA.doc.round, ...}`。同时删掉原型里 `no==='6'` 的阻塞原因表特例——那是 AR 项目专有的题型，P0 不支持表格题（见「已知限制」）。
+并把 `J` 的初始化改为 `{单据: DATA.doc.id, 轮次: DATA.doc.round, 代码依据: DATA.doc.code_rev, ...}`。
+
+回执的机读区要带上业务概念层与复核状态——把原型里收集 `rec.依据` 的那一行
+
+```javascript
+    q.querySelectorAll('.ev .cite code').forEach(c=>rec.依据.push(c.textContent.replace(/^&gt; ?/,'')));
+```
+
+改为
+
+```javascript
+    q.querySelectorAll('.ev code').forEach(c=>rec.依据.push(c.textContent.replace(/^&gt; ?/,'')));
+    const _ev = (DATA.questions.find(x=>String(x.no)===no)||{}).evidence || {};
+    if(_ev.rules_ref) rec.规则引用 = _ev.rules_ref;
+    rec.独立复核 = _ev.reviewed
+      || ((_ev.cites||[]).some(c=>c.kind==='code') ? '未复核' : null);
+```
+
+——AI 在阶段三读回执时，必须能看出"这道题的现状说明有没有被第二个人独立读过代码"。同时删掉原型里 `no==='6'` 的阻塞原因表特例——那是 AR 项目专有的题型，P0 不支持表格题（见「已知限制」）。
 
 **3d. 加 layer 分隔样式。** 在 CSS 里加：
 
@@ -1201,6 +1502,11 @@ renderMasthead(); renderPart1(); renderPart2(); renderSignoff();
 .coords .brs{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-70)}
 .demo-assumed{padding:7px 13px;border-top:1px dashed var(--red);
   background:var(--red-soft);font-size:12.5px;color:var(--ink)}
+.rule-cite .logic b{color:var(--green)}
+.unreviewed{margin-top:8px;padding:6px 10px;background:#FBF3D9;
+  border-left:2px solid var(--amber);font-size:12.5px;color:var(--ink)}
+.reviewed{margin-top:8px;padding:6px 10px;background:#EAF1EB;
+  border-left:2px solid var(--green);font-size:12.5px;color:var(--ink-70)}
 ```
 
 - [ ] **Step 4: 加 `render_html`**
@@ -1267,7 +1573,8 @@ python3 scripts/build_questionnaire.py \
 - [ ] 第一部分两条，每条「对／不对」三态；选「不对」才展开说明框
 - [ ] 三道题都渲染出来；问题 1、3 带「请先答」红标；问题 2 在 layer 2 分隔条之下
 - [ ] 问题 1 依据区显示绿色 `原话` badge + `> 证据: docs/.../李姐微信语音转述.md:4 | "客户逾期了系统就提醒一下呗"`
-- [ ] 问题 4 依据区**外层只显示白话**：「我们查代码看到系统现在是这么做的：代码现在按余额是否 ≤ 0 判定已还清……（这是开发读代码得出的理解，不是您说过的话——不对请直接指出）」；`app/reminder_rules.py:18`、入口、两条分支都**折叠**在「代码位置与分支（开发看）」里
+- [ ] 问题 4 依据区**外层只显示业务语言**：「系统现在的规则是：已还清的判定：余额清零即视为已还清，不看单子的状态字段（引自规则文档 R3，由开发读代码逆向、交规则 owner 验真——不对请直接指出）」；`app/reminder_rules.py:18`、入口、**三条**分支折叠在「代码位置与分支（开发看）」里；底下绿底一行「已独立盲审（2026-07-11，发现 1 处差异，已处置）」
+- [ ] 临时删掉问题 4 的 `reviewed` 重新出包 → 外层应出现黄底「未经独立复核——上面这段理解只有一个人读过代码」（验完记得改回来）
 - [ ] 问题 4 的演示数字两行（继续提醒／停止提醒）随选项点亮，且**没有**「基于开发假设的算法」那条红底提示（因为 `basis` 是 `branches`）
 - [ ] 抬头末行显示「代码依据取自 <8 位 sha> —— 这之后代码若有变动，结论需重新确认」
 - [ ] 问题 3 依据区**默认展开**、红色 `无据 · 请证伪` badge，⚠ 那段 weak 文案在里面
@@ -1484,6 +1791,69 @@ Create `references/questioning-rules.md`，内容是从 `templates/questionnaire
 假设的算法，页面会标注"未从代码验证"）。
 
 `doc.code_rev` 由 build 自动填 HEAD——单子发出到收回可能隔几天，代码变了结论就得重新确认。
+
+## 二之三、超过阈值就沉淀进 rules/，别 inline（机检：rules_ref）
+
+`logic` 挂在每道题里会出四个问题：同一段逻辑抄多遍、抄得不一致、业务拼不出整体、
+读代码的理解无处沉淀下次还得重读。
+
+**逆向场景本来就有这条通道**：Excel／老系统是 `raw/` 导出件 → `rules/<来源名>.md` 条目化
+→ 交规则 owner 验真 → 再出题。**源码只是换了个"来源"**，走同一条路：
+
+```
+源码 ──读懂──► rules/<模块名>.md（模板 templates/rules-template.md）
+                  R3. 已还清的判定：余额清零即视为已还清，不看状态字段
+                      > 证据: app/reminder_rules.py:18 | "if bill.balance <= 0:"
+                      入口 / 分支 / 穷举声明 / 复核状态 / owner 勾选位
+                  ▼
+            题目引 R3，不直接引代码行；业务看到的就是这句业务语言
+```
+
+**阈值**（三条全满足才允许 inline `logic`，任一不满足必须给 `rules_ref`）：
+
+- 该引用的 `branches` ≤ 2
+- 该题的 code 引用只涉 1 个文件
+- 同一句 `logic` 没在别的题里重复出现
+
+别为小改动加中间产物；但多分支／跨文件／会被复用的逻辑必须沉淀。
+
+`rules_ref` 每项 `{id, doc, text}`——`text` 是条目的业务语言副本，供页面渲染。**它不是
+自由复制**：机检要求它能在 `doc` 里那条条目附近找到，防规则文档改了而题目副本没跟上。
+
+## 二之四、独立盲审（可选强化，开发显式触发）
+
+`path:line + snippet` 有脚本能验；**业务概念那句话没有**。它是你对代码的解读，机器判不了
+对错。盲审能补一层，但要按规矩做，否则等于没做。
+
+**① 必须盲审。** 先给复核方看现有描述再问"对不对"，它会顺着说对。正确顺序：
+
+1. 复核方**不看**现有描述，自己读代码，独立写一份；
+2. **diff 两份**；
+3. **差异才是产出。**
+
+两份描述都来自概率性过程，但"两份不一样"这个事实是硬的——diff 把概率判断转成了可视差异，
+人扫一眼就知道该查哪儿。
+
+**② 给具体失败模式清单，不说"仔细看看"**（照 `chain-audit-checklist.md` 七种缺陷模式的
+思路）：
+
+- 还有别的赋值点／覆盖点吗？
+- 有上游 `if` 短路吗？
+- 有 feature flag／配置开关吗？
+- `entry` 是唯一入口吗？
+- `branches` 漏了分支吗？
+- 这行是死代码吗？
+
+**`branches` 在这里作用被放大**：它把"这段代码是什么意思"这种开放问题，收成"还有别的分支
+吗"这种**有界**问题——有界问题盲审起来又快又准。
+
+**③ 结果必须落痕。** 记进 `evidence.reviewed = {by, on, diffs, note}`，`diffs > 0` 必须写
+`note` 说明怎么处置的。没审就不填，页面如实标「未经独立复核」。
+
+**④ 别说成"已验证"。** 盲审是**抽样检查**，不是证明——同一份描述审两次可能不同结论。过了
+只能说"经一次独立复核未发现矛盾"。它换的是标签，不是保证类型。
+
+**⑤ 它进不了 CI。** 不确定、要花钱、要模型。CI 只能查 `reviewed` 填没填，查不了审得对不对。
 
 ## 三、分支穷举是义务（机检：分支对称）
 
@@ -1900,7 +2270,7 @@ jobs:
         run: |
           python3 scripts/build_questionnaire.py \
             "examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json" \
-            --check
+            --check --root examples/demo-project
 
       - name: 样例确认单出包（单文件自包含）
         run: |
@@ -2122,7 +2492,8 @@ git commit -m "docs: 阶段二出题纪律接入 HTML 确认单，v2.6.0
 
 - **表格题**：原型里 AR 的"阻塞原因×责任部门"可编辑表格是项目专有题型，P0 的 schema 只支持单选／多选／文本。需要时另加 `groups[].kind: "table"`。
 - **JS 渲染无自动化测试**：CI 只覆盖 Python 侧。模板改动后必须人工过 Task 3 Step 6 的清单。
-- **`logic` 不受 harness 保护**：`path:line + snippet` 能被 grep 核验，但 `logic` 是开发对代码的**解读**，机器判不了它对不对。缓解只有三条：页面明写它是解读、要求列 `branches`、给业务证伪出口。
+- **业务概念层不受 harness 保护**：`path:line + snippet` 能被 grep 核验，但规则条目／`logic` 是开发对代码的**解读**，机器判不了它对不对。缓解四条：页面明写它是解读、强制列 `branches`（把开放问题收成有界问题）、给业务证伪出口、可选盲审 diff。
+- **盲审是抽样不是证明**：概率性检查，换的是标签（`reviewed`）不是保证类型，不得写成"已验证"；进不了 CI，CI 只查填没填。
 - **`code_rev` 只记不校**：回执回来时若 `code_rev` 已不是 HEAD，说明期间代码变过，需人工判断结论是否仍成立；P0 只记录不自动比对。
 - **`kind:"receipt"` 非文件引用**：`verify_evidence.py` 仍校验不了，处置照 spec §9——回执归档进 `raw/` 后改真路径引用。
 - **P1 延后**：`verify_evidence.py` 吃 json 与禁用措辞探测、`spec-template.md` 的 Rejected 段自动产出、`blindspot-checklist.md` 逐维度判据。
@@ -2132,6 +2503,6 @@ git commit -m "docs: 阶段二出题纪律接入 HTML 确认单，v2.6.0
 
 **Spec 覆盖**：§4 产物清单 → Task 1/3/4/5/6；§5 schema → Task 1；§6 依赖分层与两条硬约束 → Task 1（分支对称机检）+ Task 3（layer 渲染）+ Task 4（规则文档）；§7 页面行为八条 → Task 3 Step 6 验收清单逐条对应；§8 借鉴取舍 → Task 4 的 questioning-rules.md 第五条写明与 grilling 的分界；§9 三处机检缺口 → Task 5；§10 测试 → Task 1/2/3/4/5 的测试 + Task 6 的 CI；§12 P0 范围 → 全部覆盖。
 
-**新增覆盖**：§3 的 D15/D16/D17 → Task 1（`_check_code_cites` / `_check_demo` 与 6 个测试）+ Task 2（样例桩件与真坐标核验）+ Task 3（`citeHtml` 两层渲染、`code_rev` 自动填、`demo.basis` 标注）+ Task 4（questioning-rules 第二之二节）。
+**新增覆盖**：§3 的 D18/D19/D20/D21 → Task 1（`_check_rules_threshold` / `_check_reviewed` / `validate_refs` 与 8 个测试）+ Task 2（`templates/rules-template.md`、样例规则文档、问题 4 改引 R3 并带 `reviewed`）+ Task 3（`rulesHtml` / `codeCoordsOnly` / `reviewHtml`、机读区带规则引用与复核状态、两条验收项）+ Task 4（questioning-rules 二之三、二之四节）。§3 的 D15/D16/D17 → Task 1（`_check_code_cites` / `_check_demo` 与 6 个测试）+ Task 2（样例桩件与真坐标核验）+ Task 3（`citeHtml` 两层渲染、`code_rev` 自动填、`demo.basis` 标注）+ Task 4（questioning-rules 第二之二节）。
 
-**类型一致**：`validate(doc) -> list[str]`、`render_html(doc, template) -> str`、`render_md(doc) -> str`、`TEMPLATE_PATH`、`PLACEHOLDER`、`ADVICE_WORDS` 在 Task 1/3/4 间一致；`check_file` 返回值从 4 元组改 6 元组只在 Task 5 内部，`main()` 同任务同步。模板侧 `whenToDom()` 负责 schema 题号（`2=B`）到 DOM name（`q2=B`）的转换，Task 3 定义、Task 3 内自用。`_check_code_cites(ev, tier, tag)`、`_check_demo(q, ev, tag)`、`code_rev()`、`citeHtml(c)` 均在 Task 1／Task 3 内定义并调用，无跨任务悬空引用。
+**类型一致**：`validate(doc) -> list[str]`、`render_html(doc, template) -> str`、`render_md(doc) -> str`、`TEMPLATE_PATH`、`PLACEHOLDER`、`ADVICE_WORDS` 在 Task 1/3/4 间一致；`check_file` 返回值从 4 元组改 6 元组只在 Task 5 内部，`main()` 同任务同步。模板侧 `whenToDom()` 负责 schema 题号（`2=B`）到 DOM name（`q2=B`）的转换，Task 3 定义、Task 3 内自用。`_check_code_cites(ev, tier, tag)`、`_check_demo(q, ev, tag)`、`code_rev()`、`citeHtml(c)`、`rulesHtml(ev)`、`codeCoordsOnly(c)`、`reviewHtml(ev)` 均在 Task 1／Task 3 内定义并调用；`validate_refs(doc, root)` 在 Task 1 定义，Task 2 的测试与 Task 6 的 CI（`--root`）调用。无跨任务悬空引用。
