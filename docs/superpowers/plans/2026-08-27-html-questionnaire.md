@@ -2458,6 +2458,16 @@ Expected: GitHub Actions 全绿。若失败，读日志修到绿再进 Task 7。
 
 ### Task 7: SKILL.md 出题纪律与陈旧地址
 
+> **开工前先读这段——Task 8 已经做掉了本任务的一部分，别重做。**
+>
+> 已完成（不要再动）：
+> - 铁律 4【开发拟定】那条已追加「业务没回话不等于无异议——标签只因落款转正，不因时间转正」（`SKILL.md:22`）
+> - 「落款检查」已追加「阻塞级的题不许用【开发拟定】顶过去，只能推迟开发或向拍板人升级」（`SKILL.md:94`）
+> - 阶段二问题清单要求已改为按 `decide: biz|dev` 标档，并写明「给谁去问是开发的责任……单子里不体现具体收件人」（`SKILL.md:83`）
+> - 「业务沉默协议」整节与「超时临时生效」第四档标签已删除
+>
+> **本任务实际还要做**：Step 1（阶段二第 3 步改为产出 json、指向 `questioning-rules.md`）、Step 2（只补两条台阶，见下）、Step 3（阶段三三种「需要下一轮」信号，未做）、Step 4（只补未署名降级，见下）、Step 5、Step 6。
+
 **Files:**
 - Modify: `SKILL.md`
 - Modify: `README.md`
@@ -2493,7 +2503,17 @@ Expected: GitHub Actions 全绿。若失败，读日志修到绿再进 Task 7。
    需要打印／docx／内网时，同一份 json 加 `--md` 出 Markdown，不要另写一份。
 ```
 
-- [ ] **Step 2: 阶段二确认单要求改为指向新机制**
+- [ ] **Step 2: 补两条台阶（这一步 Task 8 已做掉大半）**
+
+`SKILL.md:83` 的「确认单额外要求」现在是 ①核对表 ②按 decide 标档 ③「我不清楚」台阶——**缺两条台阶**。把它改成四条：在③之后补
+
+```
+④给"这种情况不存在"出口证伪伪场景（用于无据题）；⑤**每题必有「都不是」兜底**（模板自动追加）——一次性发单没有 AI 追问的机会，选项集猜错时业务只能靠自由文本告诉你。
+```
+
+三条台阶语义不同、都要有：「我不清楚」是**不归我管**，「这种情况不存在」是**场景不成立**，「都不是」是**你的选项集猜错了**。
+
+**以下是原计划的 Step 2 内容，Task 8 已完成，仅作对照，不要再执行：**
 
 把这一段：
 
@@ -2535,15 +2555,9 @@ Expected: GitHub Actions 全绿。若失败，读日志修到绿再进 Task 7。
 再做两件判断题：
 ```
 
-- [ ] **Step 4: 落款检查改为标签降级**
+- [ ] **Step 4: 落款检查补未署名降级（阻塞级那句 Task 8 已加）**
 
-把「落款检查」那段里这句：
-
-```
-缺落款提醒补。
-```
-
-替换为：
+`SKILL.md:94` 现在还写着「缺落款提醒补」。把这句替换为：
 
 ```
 **填写人可留空**（业务常需先交一半再转交），但回执会自动标「未署名」——此时答案
@@ -2558,7 +2572,9 @@ Expected: GitHub Actions 全绿。若失败，读日志修到绿再进 Task 7。
 ```
 - `references/questioning-rules.md` — 阶段二出题规则（生成 questionnaire.json 前必读）
 - `scripts/build_questionnaire.py` — questionnaire.json → 单文件 HTML 确认单，校验不过不出包
+- `scripts/check_template_js.py` — 模板 JS 语法与 whenToDom 契约检查（CI 用）
 - `templates/questionnaire.schema.json` — 题目数据字段契约
+- `templates/rules-template.md` — 规则文档骨架（owner 勾选位 + 证据引用 + 入口 + 分支 + 复核状态）
 ```
 
 然后修三处改名后失效的地址（账号 `JK-yan` → `kj648`）：
@@ -2590,7 +2606,16 @@ grep -rn "JK-yan" SKILL.md README.md || echo "已无陈旧地址"
 - 落款：日期自动，填写人可留空但自动降级为【开发拟定·待追认】
 - 按建议回答人分区，一份单子多拨人各看自己那部分
 - 机检加三条：业务证伪单独计数、未署名降级、矛盾段告警（未附说明则 FAIL）
-- CI 从"只在 release 验 frontmatter"改为 push/PR 跑全套机检脚本与单元测试
+- **角色收成开发／业务两档**：每题标 `decide: biz|dev`——biz=业务必须自己定（记
+  【业务确认】），dev=开发已拟默认规则请业务过目（记【开发拟定】）。阻塞级不许标 dev。
+  给谁去问是开发的责任，单子里不体现具体收件人
+- **单子上不写回填期限**；删除「业务沉默协议」整节与「超时临时生效」第四档标签，
+  标签体系回到三档。承重的两句并入铁律 4 与落款检查
+- CI 从"只在 release 验 frontmatter"改为 push/PR 跑全套：frontmatter 校验、单元测试、
+  样例确认单校验与出包、样例 spec 证据核验、旧回执回归、**模板 JS 语法与 whenToDom
+  契约检查**（后者抠出模板 `<script>` 交 node，Python 测试照不出这两类盲区）
+- `build_questionnaire.py` 的 `--root` 改为**从 json 位置往上找含 `docs/requirements/`
+  的那一层**自动推断，降级为显式覆盖——原来每个调用点都得记得手动传，一个任务里就漏了两次
 
 设计与借鉴取舍见 `docs/superpowers/specs/2026-08-27-html-questionnaire-design.md`。
 ```
