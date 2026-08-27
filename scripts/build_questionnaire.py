@@ -6,8 +6,8 @@
   python3 scripts/build_questionnaire.py <questionnaire.json> --check   # 只校验不出包
 
 校验四件事(全部 FAIL,不出包):
-1. 角色引用: questions[].who 必须是 roles[].id,不得是自由文本
-   ——否则「财务」与「财务 AR 负责人」会被算成两个人,一份单子分裂出幽灵收件人。
+1. 决策归属: questions[].decide 必须是 biz(业务定)或 dev(开发拟定请业务过目)
+   ——给谁去问是开发的事,单子不按人分区;阻塞级不许标 dev,只能推迟或升级。
 2. 依赖闭环: links/reveal 的 when 引用的题必须存在,且其 layer 严格小于被约束题的 layer。
 3. 分支对称: 同一 main 组内若部分选项有后续、部分没有,没有后续的必须显式标 terminal
    ——一次性发单、异步回填,中间没有 AI 追问,漏掉的分支要等一整轮才能补。
@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 TIERS = ("src", "code", "guess")
+DECIDE = ("biz", "dev")
 ADVICE_WORDS = re.compile(r"开发建议|建议选|推荐选|我的默认建议")
 # 规则文档条目标题:允许 ## 或 ### 两级标题,分隔符允许半角/全角句号、半角/全角冒号,
 # 因为不同作者写规则文档时标题层级和标点习惯不一致,死绑一种格式会让 validate_refs 误报。
@@ -107,16 +108,23 @@ def _check_carry_refs(doc):
 
 def validate(doc):
     errs = []
-    for key in ("doc", "roles", "questions"):
+    for key in ("doc", "questions"):
         if key not in doc:
             errs.append(f"缺顶层字段 `{key}`")
     if errs:
         return errs
 
+    if "roles" in doc:
+        errs.append("顶层 `roles` 已废弃 —— 角色只有开发与业务两档,由每题的 decide 声明;"
+                    "留着 roles 会让人以为还能按人分区(给谁是开发的事,不写进单子)")
+    if "due_days" in (doc.get("doc") or {}):
+        errs.append("`doc.due_days` 已废弃 —— 单子上不写回填期限;"
+                    "期限与催办是人找人的事,skill 观察不到也不该教")
+    if errs:
+        return errs
+
     # 类型不对就报错并提前返回,不往下走 —— 结构错误没法继续做语义校验,
     # 而 validate() 承诺不抛异常,格式错的 questionnaire.json 也要给出诊断而不是让工具崩掉。
-    if not isinstance(doc["roles"], list) or any(not isinstance(r, dict) for r in doc["roles"]):
-        errs.append("roles 必须是对象数组,每项至少含 id/name —— 不是自由文本列表")
     if not isinstance(doc["questions"], list) or any(not isinstance(q, dict) for q in doc["questions"]):
         errs.append("questions 必须是对象数组")
     if "links" in doc and not isinstance(doc["links"], dict):
@@ -124,7 +132,6 @@ def validate(doc):
     if errs:
         return errs
 
-    role_ids = {r.get("id") for r in doc["roles"]}
     layer_of = {q.get("no"): q.get("layer", 1) for q in doc["questions"]}
     # 同一句 logic 出现在多道题里 → 该沉淀进 rules/,不该抄两遍
     logic_counts = {}
@@ -138,9 +145,12 @@ def validate(doc):
         no = q.get("no")
         tag = f"问题 {no}"
 
-        for w in q.get("who", []):
-            if w not in role_ids:
-                errs.append(f"{tag}: who「{w}」不在 roles 声明里 —— 回答人必须是 role id,不得是自由文本")
+        if q.get("decide") not in DECIDE:
+            errs.append(f"{tag}: decide 必须是 {'/'.join(DECIDE)},实际「{q.get('decide')}」"
+                        f" —— biz=业务定(记【业务确认】),dev=开发拟定请业务过目(记【开发拟定】)")
+        elif q.get("blocking") and q.get("decide") == "dev":
+            errs.append(f"{tag}: 阻塞级的题不许标 decide=dev —— 【开发拟定】不得顶过阻塞级岔口,"
+                        f"只能推迟开发或向拍板人升级")
 
         # groups/options 结构防御: validate() 承诺不抛异常, 结构坏掉时给出诊断并跳过
         # 依赖它的语义校验(建议措辞/分支对称/reveal), evidence 那几项照常做。
@@ -389,7 +399,9 @@ def main():
     if errs:
         print(f"\n✗ 校验未通过: {len(errs)} 项。修正后重跑;不出包。")
         sys.exit(1)
-    print(f"✓ 校验通过: {len(doc['questions'])} 道题 / {len(doc['roles'])} 个角色")
+    n_biz = sum(1 for q in doc["questions"] if q.get("decide") == "biz")
+    n_dev = sum(1 for q in doc["questions"] if q.get("decide") == "dev")
+    print(f"✓ 校验通过: {len(doc['questions'])} 道题(业务定 {n_biz} / 开发拟定 {n_dev})")
     if args.check:
         return
     out = Path(args.out or f"confirm-{doc['doc']['id']}-r{doc['doc']['round']}.html")

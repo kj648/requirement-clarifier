@@ -77,6 +77,14 @@ class TestExample(unittest.TestCase):
                 self.assertIn(q["demo"].get("basis"), ("branches", "assumed"),
                               f"问题 {q['no']} 的 demo 未声明 basis")
 
+    def test_example_has_no_roles_or_due_days(self):
+        self.assertNotIn("roles", self.doc)
+        self.assertNotIn("due_days", self.doc["doc"])
+
+    def test_example_exercises_both_decide_values(self):
+        vals = {q["decide"] for q in self.doc["questions"]}
+        self.assertEqual(vals, {"biz", "dev"}, "样例应同时演示两档")
+
 
 if __name__ == "__main__":
     unittest.main()

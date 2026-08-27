@@ -146,7 +146,8 @@ h1{
   font-size:11.5px;font-family:var(--mono);letter-spacing:.04em;padding:2px 7px;
   border:1px solid var(--rule);color:var(--ink-70);background:var(--sheet-2);
 }
-.tag.who{border-color:#C8D2DE;color:var(--blue);background:#EEF3F8}
+.tag.d-biz{border-color:#C8D2DE;color:#1F3A5F;background:#EEF3F8}
+.tag.d-dev{border-color:#D3DBCE;color:#4A585F;background:#F4F7F1}
 .tag.first{border-color:var(--red);color:var(--red);background:var(--red-soft);font-weight:700}
 .tag.done{border-color:var(--green);color:var(--green);background:#EAF1EB}
 
@@ -302,7 +303,7 @@ dialog::backdrop{background:rgba(24,35,43,.45)}
 
 .usage{display:inline-block;margin-top:6px;color:var(--ink-45);font-size:12.5px;line-height:1.7}
 
-/* 收件人分区 */
+/* 硬活筛选 */
 .whorow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex-basis:100%;
   padding-top:9px;margin-top:2px;border-top:1px dashed var(--rule)}
 .whorow .lb{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink-45);margin-right:2px}
@@ -311,11 +312,6 @@ dialog::backdrop{background:rgba(24,35,43,.45)}
 .whochip:hover{border-color:var(--ink-45);color:var(--ink)}
 .whochip.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
 .whochip .c{font-family:var(--mono);opacity:.75;margin-left:4px}
-.q.offrole{opacity:.55}
-.q.offrole:not(.peek) .q-bd{display:none}
-.q.offrole .q-hd{cursor:pointer}
-.q.offrole .peekhint{font-size:12px;color:var(--blue);margin-top:6px;display:block}
-.q.peek{opacity:1}
 .rail a.dim{opacity:.4}
 
 /* 人读回执 */
@@ -477,11 +473,14 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
 /* ── 渲染器：题目内容全部来自注入的 qdata，模板本身不含任何项目内容 ──────────
    必须先跑完再取 .q 节点：下面的 QS、索引、兜底出口都依赖已渲染好的 DOM。 */
 const DATA = JSON.parse(document.getElementById('qdata').textContent);
-const ROLE_NAME = Object.fromEntries(DATA.roles.map(r => [r.id, r.name]));
 const esc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const TIER_LABEL = {src:['原话','src'], code:['代码','code'], guess:['无据 · 请证伪','guess']};
+const DECIDE_LABEL = {
+  biz: ['业务定', 'biz'],
+  dev: ['开发拟定 · 请过目', 'dev'],
+};
 
 function renderMasthead(){
   const d = DATA.doc, blocking = DATA.questions.filter(q => q.blocking).map(q => q.no);
@@ -500,10 +499,11 @@ function renderMasthead(){
     </div>
     <div class="seal"><span class="no">${esc(d.id)}</span>
       <span class="v">v${d.round} / R${d.round}</span>
-      <span class="due">回填期限<br>${d.due_days ?? 3} 个工作日</span></div>`;
+      <span class="due">共 ${DATA.questions.length} 题</span></div>`;
   document.getElementById('howto').innerHTML =
     '第一部分请<b>逐条核对</b>；第二部分请<b>点选</b>选项、必要处补充说明。'
-  + '标注「建议由 XX 回答」的题目不归您管，<b>请转交对应的人</b>——转交比替答重要。'
+  + '标「业务定」的题必须您自己拍板；标「开发拟定 · 请过目」的题开发已给默认规则，'
+  + '<b>过目一下有无异议</b>即可——不确定该找谁定，先转给知情的人。'
   + '答不了的题可以留空先发，剩下的转交别人接着填。填完点底部<b>导出回执</b>发回即可。';
   document.title = `需求确认单 · ${d.title}`;
 }
@@ -671,10 +671,10 @@ function whenInWords(expr){
 function whenToDom(expr){ return String(expr).replace(/(^|[\s&|])(\d+)(?=\s*(?:!=|=))/g, '$1q$2'); }
 
 function questionHtml(q){
-  const who = q.who.map(id => ROLE_NAME[id] || id).join(' + ');
+  const [dLabel, dCls] = DECIDE_LABEL[q.decide] || DECIDE_LABEL.dev;
   const tags = [
     q.blocking ? '<span class="tag first">请先答</span>' : '',
-    `<span class="tag who">建议由 ${esc(who)} 回答</span>`].join('');
+    `<span class="tag d-${dCls}">${esc(dLabel)}</span>`].join('');
   const reveals = (q.reveal || []).map(r => {
     const id = `rv-${q.no}-${r.when}`;
     /* carry：前面填过的事实带到这里当默认值。生产者只此一处 —— 缺了它
@@ -698,7 +698,7 @@ function questionHtml(q){
          : '<textarea id="clash-' + q.no + '" rows="2" placeholder="写明怎么处理，或回去改一个选择"></textarea>'}
      </div>`).join('');
   return `<article class="q" id="q${q.no}" data-no="${q.no}"
-      data-title="${esc(q.title)}" data-who="${esc(who)}"${q.blocking ? ' data-first="1"' : ''}
+      data-title="${esc(q.title)}" data-decide="${esc(q.decide)}"${q.blocking ? ' data-first="1"' : ''}
       data-layer="${q.layer}">
     <div class="q-hd"><div class="q-no">${q.no}</div><div class="h">
       <h3 class="q-t">${esc(q.title)}</h3><div class="tags">${tags}</div></div></div>
@@ -885,53 +885,33 @@ function refreshClash(){
     c.classList.toggle('show', meets(c.dataset.clashWhen)));
 }
 
-/* ── 收件人分区（借 to-questionnaire：先定收件人，题只瞄准该收件人的知识差） ──
-   一份单子的题散在多拨人手里；谁打开都只该先看自己那几道，其余可展开但不挡路。 */
-const ROLES = [...new Set(QS.flatMap(q=>q.dataset.who.split('+').map(s=>s.trim())))];
-let myRole = null;
-try{ myRole = localStorage.getItem('rc-role')||null; }catch(e){}
-function ownsRole(q, role){
-  return !role || q.dataset.who.split('+').map(s=>s.trim()).includes(role);
-}
-function buildWhoRow(){
-  const row=document.getElementById('whoRow');
-  row.innerHTML = '<span class="lb">我是</span>' +
-    [['', '全部'], ...ROLES.map(r=>[r,r])].map(([v,label])=>{
-      const mine = QS.filter(q=>ownsRole(q,v));
-      const left = mine.filter(q=>!answered(q)).length;
-      return `<button type="button" class="whochip${myRole===(v||null)?' on':''}"`
-           + ` data-role="${esc(v)}">`
-           + `${esc(label)}<span class="c">${mine.length-left}/${mine.length}</span></button>`;
-    }).join('');
-  row.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{
-    myRole = b.dataset.role || null;
-    try{ localStorage.setItem('rc-role', myRole||''); }catch(e){}
-    QS.forEach(q=>q.classList.remove('peek'));
-    refreshAll();
+/* 硬活筛选：业务想先看哪些必须自己定。只改显隐，不改归属——没有"我是谁"，也不折叠任何题。 */
+let decideFilter = '';   // '' | 'biz' | 'dev'
+function buildDecideRow(){
+  const row = document.getElementById('whoRow');
+  const count = v => QS.filter(q => !v || q.dataset.decide === v);
+  const cell = (v, label) => {
+    const mine = count(v), done = mine.filter(answered).length;
+    return `<button type="button" class="whochip${decideFilter === v ? ' on' : ''}"`
+         + ` data-decide="${v}">${label}<span class="c">${done}/${mine.length}</span></button>`;
+  };
+  row.innerHTML = '<span class="lb">先看</span>'
+    + cell('', '全部') + cell('biz', '必须业务定') + cell('dev', '只需过目');
+  row.querySelectorAll('.whochip').forEach(b => b.onclick = () => {
+    decideFilter = b.dataset.decide; refreshAll();
   });
 }
-function refreshRoles(){
-  QS.forEach(q=>{
-    const off = !ownsRole(q, myRole);
-    q.classList.toggle('offrole', off);
-    let hint=q.querySelector('.peekhint');
-    if(off && !hint){
-      hint=document.createElement('span'); hint.className='peekhint';
-      hint.textContent=`这题建议由 ${q.dataset.who} 回答 · 点标题也能展开自己填`;
-      q.querySelector('.q-hd .h').appendChild(hint);
-    }
-    if(!off && hint) hint.remove();
-    rail.querySelector(`a[data-q="${q.id}"]`).classList.toggle('dim', off);
+function refreshDecideFilter(){
+  QS.forEach(q => q.hidden = !!decideFilter && q.dataset.decide !== decideFilter);
+  rail.querySelectorAll('a').forEach(a => {
+    const q = document.getElementById(a.dataset.q);
+    a.classList.toggle('dim', !!q && q.hidden);
   });
 }
-document.addEventListener('click', e=>{
-  const hd=e.target.closest('.q.offrole .q-hd');
-  if(hd) hd.closest('.q').classList.toggle('peek');
-});
 
 function refreshAll(){
   refreshPart1(); refreshConditions(); refreshNA(); refreshCarry(); refreshClash();
-  refreshDemos(); refreshStatus(); refreshRoles(); buildWhoRow();
+  refreshDemos(); refreshStatus(); refreshDecideFilter(); buildDecideRow();
   document.getElementById('s-date').value = stamp();
   try{ localStorage.setItem('rc-filler', txt('s-name')); }catch(e){}
 }
@@ -962,6 +942,10 @@ function buildReceipt(){
        + (unans.length?` · 未答 ${unans.length} 题（问题 ${unans.join('、')}）`:'')
        + (P1.length ? ` · 第一部分核对 ${p1done}/${P1.length}` : '')
        + (clashes().length?` · ⚠ ${clashes().length} 处矛盾`:''));
+  const byDecide = v => QS.filter(q => q.dataset.decide === v);
+  const bizQ = byDecide('biz'), devQ = byDecide('dev');
+  L.push(`> 分档：业务定 ${bizQ.length} 题（已答 ${bizQ.filter(answered).length}）`
+       + ` · 开发拟定 ${devQ.length} 题（已过目 ${devQ.filter(answered).length}）`);
   if(!name) L.push('> ⚠ 未署名：本回执不得记为【业务确认】，须按【开发拟定·待追认】入账，回头补落款才能转正。');
   const cls=clashes();
   if(cls.length){
@@ -1008,7 +992,7 @@ function buildReceipt(){
     rec.独立复核 = _ev.reviewed
       || ((_ev.cites||[]).some(c=>c.kind==='code') ? '未复核' : null);
     L.push('');
-    L.push(`### 问题 ${no}：${q.dataset.title}（建议由 ${q.dataset.who} 回答）${q.dataset.first?'（阻塞）':''}`);
+    L.push(`### 问题 ${no}：${q.dataset.title}（${q.dataset.decide === 'biz' ? '业务定' : '开发拟定·请过目'}）${q.dataset.first?'（阻塞）':''}`);
     if(off){
       const why=txt('deny-'+no)||'（未写原因）';
       L.push(`☒ 本题不成立（业务证伪）：${why}`);
@@ -1061,8 +1045,7 @@ function buildReceipt(){
   L.push(`填写人：${name||'（未署名·导出自 HTML 确认单）'}　部门：${txt('s-dept')||'（未填）'}　日期：${stamp()}`);
   if(txt('s-relay')) L.push(`代答／转交说明：${txt('s-relay')}`);
   J.落款={填写人:name, 部门:txt('s-dept'), 导出时间:stamp(), 转交:txt('s-relay'),
-          已署名:!!name, 填写身份:myRole||'（未选身份，按全部题作答）'};
-  if(myRole) L.push(`填写身份：${myRole}（本轮只对该身份名下的题负责，其余题请确认是否已转交）`);
+          已署名:!!name};
   L.push('');
   L.push('<!-- 机读区（供 check_questionnaire.py / AI 解析，业务无需理会） -->');
   L.push('```json');

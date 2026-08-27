@@ -1,13 +1,9 @@
 {
   "doc": {
     "id": "逾期提醒", "title": "逾期提醒", "round": 1,
-    "sent_by": "开发", "sent_on": "2026-07-11", "due_days": 3,
+    "sent_by": "开发", "sent_on": "2026-07-11",
     "usage": "您的答案会写进开发规格并落库存档，日后提醒发错时按这份回执追溯——照实答，不确定的地方标出来比猜一个更有用。"
   },
-  "roles": [
-    {"id": "fin_wang", "name": "财务 王芳"},
-    {"id": "ops_li", "name": "运营 李姐"}
-  ],
   "part1": [
     {"n": 1, "we_understand": "客户逾期后系统自动提醒，不再靠财务翻表人工发。",
      "note": "如有异议请说明"},
@@ -22,7 +18,7 @@
     {
       "no": 1, "layer": 1, "blocking": true,
       "title": "「逾期」从哪天起算？",
-      "who": ["fin_wang"],
+      "decide": "biz",
       "background": "合同到期没还就算逾期，还是给几天宽限期？这决定提醒的触发时点。",
       "advice_allowed": false,
       "evidence": {
@@ -43,7 +39,7 @@
     {
       "no": 2, "layer": 2,
       "title": "重复提醒的频率和上限？",
-      "who": ["ops_li"],
+      "decide": "dev",
       "background": "您说「别发太勤」「过几天再提醒」，需要落成具体数字才能开发。",
       "advice_allowed": true,
       "evidence": {
@@ -73,7 +69,7 @@
     {
       "no": 4, "layer": 1,
       "title": "「已还清」按余额判还是按状态字段判？",
-      "who": ["fin_wang"],
+      "decide": "biz",
       "background": "代码现在按余额是否清零判定已还清。如果单子的状态字段和余额可能不一致（比如做过差额处理但余额没归零），就会继续发提醒。",
       "advice_allowed": false,
       "evidence": {
@@ -116,7 +112,7 @@
     {
       "no": 3, "layer": 1, "blocking": true,
       "title": "客户还了一部分，还提醒吗？",
-      "who": ["fin_wang"],
+      "decide": "biz",
       "background": "部分还款后单子仍有余额，是继续提醒还是停。",
       "advice_allowed": false,
       "evidence": {

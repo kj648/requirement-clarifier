@@ -63,6 +63,22 @@ class TestRenderHtml(unittest.TestCase):
         """没做盲审就得如实说,不能让『有代码依据』看起来等于『已核实』。"""
         self.assertIn("未经独立复核", self.tpl)
 
+    def test_no_identity_partition_left(self):
+        """身份分区已撤销 —— 残留的选择器会让人以为还能按人筛。
+        注:whoRow 容器 id 按брief「四处注意」指示保留(骨架不动,只换内容/逻辑),
+        故不在此列检查——它是 Step 7 grep 允许命中 1 次的例外,与本测试的
+        『残留身份分区痕迹』语义不冲突。"""
+        for gone in ("offrole", "peekhint", "ownsRole", "rc-role", "填写身份"):
+            self.assertNotIn(gone, self.tpl, f"身份分区残留: {gone}")
+
+    def test_decide_filter_present(self):
+        for kw in ("必须业务定", "只需过目", "业务定", "开发拟定 · 请过目"):
+            self.assertIn(kw, self.tpl, f"缺硬活筛选文案: {kw}")
+
+    def test_no_deadline_in_template(self):
+        for gone in ("回填期限", "due_days", "个工作日"):
+            self.assertNotIn(gone, self.tpl, f"期限残留: {gone}")
+
 
 if __name__ == "__main__":
     unittest.main()

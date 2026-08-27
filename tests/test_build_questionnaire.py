@@ -9,14 +9,13 @@ def doc(**over):
     """最小合法文档；用 over 或就地删字段造反例。"""
     base = {
         "doc": {"id": "T", "title": "测试单", "round": 1,
-                "sent_by": "开发", "sent_on": "2026-08-27", "due_days": 3,
+                "sent_by": "开发", "sent_on": "2026-08-27",
                 "usage": "答案会写进开发规格"},
-        "roles": [{"id": "fin", "name": "财务"}],
         "part1": [],
         "layers": [{"n": 1}, {"n": 2}],
         "questions": [
             {"no": 1, "layer": 1, "blocking": True, "title": "口径 A 还是 B？",
-             "who": ["fin"], "background": "背景", "advice_allowed": False,
+             "decide": "biz", "background": "背景", "advice_allowed": False,
              "evidence": {"tier": "code", "cites": [
                  {"kind": "code", "path": "a.py", "line": 1, "snippet": "x = 1",
                   "logic": "取值为 1，没有其它赋值点",
@@ -27,7 +26,7 @@ def doc(**over):
                  {"key": "A", "label": "按 A"},
                  {"key": "B", "label": "按 B", "terminal": True}]}],
              "reveal": [{"when": "A", "ask": "A 的细则"}]},
-            {"no": 2, "layer": 2, "title": "后续题", "who": ["fin"],
+            {"no": 2, "layer": 2, "title": "后续题", "decide": "dev",
              "background": "背景", "advice_allowed": True,
              "evidence": {"tier": "guess", "cites": [],
                           "weak": "整题无据：口径在代码里没有现成算法"},
@@ -43,11 +42,43 @@ class TestValidate(unittest.TestCase):
     def test_minimal_document_passes(self):
         self.assertEqual(bq.validate(doc()), [])
 
-    def test_who_must_reference_declared_role(self):
+    def test_decide_must_be_biz_or_dev(self):
+        """角色只有开发与业务两档 —— 给谁是开发的事，不写进单子。"""
+        for bad in ("fin", "财务", "BIZ", "", None):
+            d = doc()
+            d["questions"][0]["decide"] = bad
+            errs = bq.validate(d)
+            self.assertTrue(any("decide" in e for e in errs), f"{bad!r}: {errs}")
+
+    def test_decide_both_values_pass(self):
+        # 用非阻塞的问题 2 —— 问题 1 是 blocking:True,标 dev 会撞
+        # test_blocking_question_must_be_decided_by_business 那条规则,
+        # 这里只想单独验证 biz/dev 两个枚举值本身都合法。
+        for good in ("biz", "dev"):
+            d = doc()
+            d["questions"][1]["decide"] = good
+            self.assertEqual(bq.validate(d), [])
+
+    def test_roles_key_is_rejected_as_leftover(self):
+        """顶层 roles 已废弃 —— 留着会让人以为还能按人分区。"""
         d = doc()
-        d["questions"][0]["who"] = ["财务"]              # 自由文本，不是 role id
+        d["roles"] = [{"id": "fin", "name": "财务"}]
         errs = bq.validate(d)
-        self.assertTrue(any("who" in e and "roles" in e for e in errs), errs)
+        self.assertTrue(any("roles" in e and "废弃" in e for e in errs), errs)
+
+    def test_due_days_is_rejected_as_leftover(self):
+        d = doc()
+        d["doc"]["due_days"] = 3
+        errs = bq.validate(d)
+        self.assertTrue(any("due_days" in e for e in errs), errs)
+
+    def test_blocking_question_must_be_decided_by_business(self):
+        """阻塞级不许用【开发拟定】顶过去 —— 只能推迟或升级。"""
+        d = doc()
+        d["questions"][0]["blocking"] = True
+        d["questions"][0]["decide"] = "dev"
+        errs = bq.validate(d)
+        self.assertTrue(any("阻塞" in e for e in errs), errs)
 
     def test_dangling_when_reference_is_rejected(self):
         d = doc()

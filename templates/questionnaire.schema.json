@@ -3,7 +3,7 @@
   "title": "requirement-clarifier 确认单题目数据",
   "description": "语义校验(依赖闭环/分支对称/建议措辞)由 scripts/build_questionnaire.py 执行,JSON Schema 无法表达。",
   "type": "object",
-  "required": ["doc", "roles", "questions"],
+  "required": ["doc", "questions"],
   "properties": {
     "doc": {
       "type": "object",
@@ -11,14 +11,8 @@
       "properties": {
         "round": {"type": "integer", "description": "第 N 轮确认单。与 questions[].layer(依赖层级)是两个概念。"},
         "code_rev": {"type": "string", "description": "build 时自动填 git rev-parse HEAD;仓库外运行留空。单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。"},
-        "due_days": {"type": "integer", "default": 3},
         "usage": {"type": "string", "description": "给业务看的『你的答案会被用到哪里』"}
       }
-    },
-    "roles": {
-      "type": "array", "minItems": 1,
-      "items": {"type": "object", "required": ["id", "name"]},
-      "description": "回答人必须在此声明;questions[].who 只能引用 id。"
     },
     "part1": {
       "type": "array",
@@ -31,8 +25,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["no", "layer", "title", "who", "advice_allowed", "evidence", "groups"],
+        "required": ["no", "layer", "title", "decide", "advice_allowed", "evidence", "groups"],
         "properties": {
+          "decide": {"enum": ["biz", "dev"],
+            "description": "biz=业务必须自己定(答案记【业务确认】);dev=开发已拟默认规则,请业务过目(记【开发拟定】)。给谁去问是开发的事,不写进单子;阻塞级(blocking=true)不得标 dev。"},
           "blocking": {"type": "boolean", "default": false},
           "advice_allowed": {
             "type": "boolean",
