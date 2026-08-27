@@ -34,3 +34,9 @@ python3 ../../scripts/verify_evidence.py docs/requirements/specs/逾期提醒.md
 - **未验证假设**:"站内信通道可复用"标着【假设】,harness 会一直点名它,直到查码核实。
 
 这正是铁律 2(暴露未知 > 假装完整)的样子。
+
+## 关于 `app/reminder_rules.py`
+
+这是**桩件**,不是 skill 的目录约定。它存在的唯一目的是让样例确认单能演示
+`code` 档证据——`logic`(白话逻辑)／`entry`(页面入口)／`branches`(分支),
+以及测试如何逐条核验这些坐标是真的。真实项目里对应的是你自己的代码。

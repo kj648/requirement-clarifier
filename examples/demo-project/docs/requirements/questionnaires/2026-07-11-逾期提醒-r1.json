@@ -1,0 +1,140 @@
+{
+  "doc": {
+    "id": "逾期提醒", "title": "逾期提醒", "round": 1,
+    "sent_by": "开发", "sent_on": "2026-07-11", "due_days": 3,
+    "usage": "您的答案会写进开发规格并落库存档，日后提醒发错时按这份回执追溯——照实答，不确定的地方标出来比猜一个更有用。"
+  },
+  "roles": [
+    {"id": "fin_wang", "name": "财务 王芳"},
+    {"id": "ops_li", "name": "运营 李姐"}
+  ],
+  "part1": [
+    {"n": 1, "we_understand": "客户逾期后系统自动提醒，不再靠财务翻表人工发。",
+     "note": "如有异议请说明"},
+    {"n": 2, "we_understand": "营销类短信要审批、业务通知类不用——本功能按业务通知类走，不走审批。",
+     "note": "2026-06-20 已确认过的口径"}
+  ],
+  "layers": [
+    {"n": 1, "why": "起算日与是否继续提醒决定其余规则"},
+    {"n": 2}
+  ],
+  "questions": [
+    {
+      "no": 1, "layer": 1, "blocking": true,
+      "title": "「逾期」从哪天起算？",
+      "who": ["fin_wang"],
+      "background": "合同到期没还就算逾期，还是给几天宽限期？这决定提醒的触发时点。",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "src",
+        "cites": [{"kind": "src",
+                   "path": "docs/requirements/raw/2026-07-10-李姐微信语音转述.md",
+                   "line": 4,
+                   "snippet": "客户逾期了系统就提醒一下呗"}],
+        "weak": null
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "到期日次日即逾期", "terminal": true},
+        {"key": "B", "label": "有宽限期，宽限期后才算"},
+        {"key": "dk", "kind": "dontknow", "label": "我不清楚", "terminal": true}
+      ]}],
+      "reveal": [{"when": "B", "ask": "宽限期几天"}]
+    },
+    {
+      "no": 2, "layer": 2,
+      "title": "重复提醒的频率和上限？",
+      "who": ["ops_li"],
+      "background": "您说「别发太勤」「过几天再提醒」，需要落成具体数字才能开发。",
+      "advice_allowed": true,
+      "evidence": {
+        "tier": "src",
+        "cites": [
+          {"kind": "src", "path": "docs/requirements/raw/2026-07-10-李姐微信语音转述.md",
+           "line": 6, "snippet": "别发太勤"},
+          {"kind": "src", "path": "docs/requirements/raw/2026-07-10-李姐微信语音转述.md",
+           "line": 7, "snippet": "过几天再提醒一次"}
+        ]
+      },
+      "groups": [
+        {"id": "main", "options": [
+          {"key": "A", "label": "每 3 天一次，最多 3 次",
+           "cost": "开发建议：选 A，上限明确、好排查"},
+          {"key": "B", "label": "每 7 天一次，直到还清", "terminal": true}
+        ]},
+        {"id": "after_cap", "ask": "达到上限后还没还，怎么办",
+         "inline": true, "tier": "guess",
+         "options": [
+           {"key": "manual", "label": "转人工跟进"},
+           {"key": "stop", "label": "就此停止，不再提醒"}
+         ]}
+      ],
+      "reveal": [{"when": "A", "ask": "达到上限后怎么办"}]
+    },
+    {
+      "no": 4, "layer": 1,
+      "title": "「已还清」按余额判还是按状态字段判？",
+      "who": ["fin_wang"],
+      "background": "代码现在按余额是否清零判定已还清。如果单子的状态字段和余额可能不一致（比如做过差额处理但余额没归零），就会继续发提醒。",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "code",
+        "rules_ref": [{
+          "id": "R3",
+          "doc": "docs/requirements/rules/reminder.md",
+          "text": "已还清的判定：余额清零即视为已还清，不看单子的状态字段"
+        }],
+        "reviewed": {
+          "by": "独立盲审", "on": "2026-07-11", "diffs": 1,
+          "note": "复核方独立读代码时列出了「还没到逾期」这条分支，原稿只写了余额和逾期两条，已补入 R3"
+        },
+        "cites": [{
+          "kind": "code",
+          "path": "app/reminder_rules.py", "line": 18,
+          "snippet": "if bill.balance <= 0:",
+          "entry": "app/reminder_rules.py:15",
+          "branches": [
+            {"cond": "还没到逾期", "then": "不提醒", "cite": "app/reminder_rules.py:17"},
+            {"cond": "余额 ≤ 0", "then": "不再提醒", "cite": "app/reminder_rules.py:19"},
+            {"cond": "余额 > 0 且已逾期", "then": "提醒，累计发满 3 次为止", "cite": "app/reminder_rules.py:20"}
+          ],
+          "branches_exhaustive": true
+        }]
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "就按余额判（与现在代码一致，不用改）", "terminal": true},
+        {"key": "B", "label": "按状态字段判（差额处理过的单子即视为已还清）", "terminal": true}
+      ]}],
+      "demo": {
+        "given": "一张单子应收 1000 元，收到 950 元，剩 50 元做了差额处理但余额字段仍为 50",
+        "basis": "branches",
+        "rows": [
+          {"when": ["A"], "k": "系统行为", "v": "继续提醒"},
+          {"when": ["B"], "k": "系统行为", "v": "停止提醒"}
+        ]
+      }
+    },
+    {
+      "no": 3, "layer": 1, "blocking": true,
+      "title": "客户还了一部分，还提醒吗？",
+      "who": ["fin_wang"],
+      "background": "部分还款后单子仍有余额，是继续提醒还是停。",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "guess", "cites": [],
+        "weak": "整题无据：部分还款这个场景李姐没提过，是开发从盲区清单（金额与账务口径）推出来的。如果业务上不存在部分还款，请直接判本题不成立。"
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "只要有余额就继续提醒", "terminal": true},
+        {"key": "B", "label": "部分还款后暂停，由人工决定", "terminal": true}
+      ]}]
+    }
+  ],
+  "links": {
+    "na": [{"when": "2=B", "target": "2.after_cap",
+            "note": "因问题 2 选了 B：一直提醒到还清，没有上限"}],
+    "carry": [],
+    "clash": [{"when": "3=B & 2=B",
+               "why": "问题 2 选 B 是「一直自动提醒到还清」，问题 3 选 B 是「部分还款后交人工决定」——两者对「什么时候停」给了不同答案，客户还了一部分之后到底还发不发？",
+               "require_explain": true}]
+  }
+}
