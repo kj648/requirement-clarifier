@@ -104,6 +104,21 @@ class TestRenderHtml(unittest.TestCase):
         m = re.search(r"@media print\{(.*?)\n\}", self.tpl, re.S)
         self.assertIn("break-inside:avoid", m.group(1).replace(" ", ""))
 
+    def test_flex_row_parents_wrap_when_a_child_wants_its_own_row(self):
+        """子元素 flex-basis:100% 意味着它想独占一行；父容器若是 nowrap,
+        它会挤在同一行并把兄弟压成 0 宽 —— 中文于是一字一行。
+        这个 bug 在模板里活了很久,97 条测试全没抓到,因为没有一条在量宽高。"""
+        import re as _re
+        css = _re.search(r"<style>(.*?)</style>", self.tpl, _re.S).group(1)
+        # 找出所有声明了 flex-basis:100% 的规则的选择器
+        wants_own_row = _re.findall(r"([^{}]+)\{[^{}]*flex\s*:\s*0\s+1\s+100%", css)
+        self.assertTrue(wants_own_row, "样本失效:模板里已无 flex:0 1 100% 的规则,请更新此测试")
+        for sel in wants_own_row:
+            sel = sel.strip().lstrip(".")
+            # 该元素的父容器（这里只有 .statusbar 一处）必须允许换行
+            self.assertRegex(css, r"\.statusbar\{[^{}]*flex-wrap\s*:\s*wrap",
+                             f"{sel} 想独占一行,但 .statusbar 没有 flex-wrap:wrap")
+
 
 if __name__ == "__main__":
     unittest.main()
