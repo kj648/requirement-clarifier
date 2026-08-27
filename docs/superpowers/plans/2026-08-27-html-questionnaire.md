@@ -1634,7 +1634,7 @@ layer 只做分层排布与提示，前沿推进由页面的条件引擎执行�
 - Test: `tests/test_render_md.py`
 
 **Interfaces:**
-- Consumes: `validate()`、样例 json
+- Consumes: `validate()`、样例 json（Task 8 之后：无 `roles`、无 `due_days`，每题带 `decide: "biz"|"dev"`）
 - Produces: `render_md(doc: dict) -> str`
 
 - [ ] **Step 1: 写失败测试**
@@ -1660,6 +1660,18 @@ class TestRenderMd(unittest.TestCase):
 
     def test_question_heading_matches_checker_contract(self):
         self.assertIn("### 问题 1：「逾期」从哪天起算？", self.md)
+
+    def test_heading_carries_decide_not_person(self):
+        """给谁是开发的事，单子只标业务定/开发拟定。"""
+        line = next(l for l in self.md.splitlines() if l.startswith("### 问题 1"))
+        self.assertIn("业务定", line)
+        self.assertNotIn("建议由", self.md)
+        line2 = next(l for l in self.md.splitlines() if l.startswith("### 问题 2"))
+        self.assertIn("开发拟定", line2)
+
+    def test_no_deadline_in_md(self):
+        for gone in ("工作日", "回填期限", "回传"):
+            self.assertNotIn(gone, self.md, f"期限残留: {gone}")
 
     def test_options_carry_letters_and_empty_boxes(self):
         self.assertIn("☐ A. 到期日次日即逾期", self.md)
@@ -1701,13 +1713,14 @@ def render_md(doc):
     """同一份 json 出 Markdown,供打印/docx/内网场合。
     格式必须与 check_questionnaire.py 认的契约一致:
     `### 问题 N：`、`☐ A. `、`【作答区】`、`## 填写信息`。"""
-    d, role = doc["doc"], {r["id"]: r["name"] for r in doc["roles"]}
+    d = doc["doc"]
     L = [f"# 需求确认单：{d['title']}（第 {d['round']} 轮）",
          f"> 第 {d['round']} 轮 · {d['sent_on']} · 发出人：{d['sent_by']}"
-         f" · 请于 {d.get('due_days', 3)} 个工作日内填写后回传", ""]
+         f" · 共 {len(doc['questions'])} 题", ""]
     L += [d["usage"], "",
           "填写说明：第一部分请逐条核对；第二部分请在 ☐ 打勾、【作答区】作答。"
-          "标注「建议由 XX 回答」的题目不归您管请转交。填完发回即可。", ""]
+          "标「业务定」的题必须您自己拍板；标「开发拟定」的是我们已经拟好的默认规则，"
+          "请过目，无异议即生效。填完发回即可。", ""]
 
     if doc.get("part1"):
         L += ["## 第一部分 · 我们理解的（请逐条核对）", "",
@@ -1718,8 +1731,8 @@ def render_md(doc):
 
     L += ["## 第二部分 · 待确认问题（请作答）", ""]
     for q in sorted(doc["questions"], key=lambda x: (x["layer"], x["no"])):
-        who = " + ".join(role.get(i, i) for i in q["who"])
-        L.append(f"### 问题 {q['no']}：{q['title']}（建议由 {who} 回答）"
+        decide = "业务定" if q["decide"] == "biz" else "开发拟定·请过目"
+        L.append(f"### 问题 {q['no']}：{q['title']}（{decide}）"
                  + ("（阻塞）" if q.get("blocking") else ""))
         if q.get("background"):
             L.append(f"背景：{q['background']}")
