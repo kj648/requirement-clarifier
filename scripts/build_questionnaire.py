@@ -34,6 +34,8 @@ ADVICE_WORDS = re.compile(r"开发建议|建议选|推荐选|我的默认建议"
 RULE_ENTRY = re.compile(r"^#{2,3}\s*(?P<id>R\d+)[.．:：]\s*(?P<text>.*)$", re.M)
 # when 表达式里的题号引用:  "1=B"、"4=B & 1=B"、"7.crm!=x"
 WHEN_REF = re.compile(r"(?<![\w.])(\d+)\s*(?:\.\w+)?\s*(?:!=|=)")
+TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "templates" / "questionnaire.html"
+PLACEHOLDER = "__QUESTIONNAIRE_DATA__"
 
 
 def _when_refs(expr):
@@ -78,7 +80,25 @@ def validate(doc):
             if w not in role_ids:
                 errs.append(f"{tag}: who「{w}」不在 roles 声明里 —— 回答人必须是 role id,不得是自由文本")
 
-        groups = {g.get("id"): g for g in q.get("groups", [])}
+        # groups/options 结构防御: validate() 承诺不抛异常, 结构坏掉时给出诊断并跳过
+        # 依赖它的语义校验(建议措辞/分支对称/reveal), evidence 那几项照常做。
+        gs = q.get("groups")
+        if not isinstance(gs, list):
+            errs.append(f"{tag}: groups 必须是数组")
+            gs, opts_ok = [], False
+        else:
+            opts_ok = all(isinstance(g, dict) for g in gs)
+            if not opts_ok:
+                errs.append(f"{tag}: groups 每项必须是对象(至少含 id/options)")
+        bad_grp = [str(g.get("id")) for g in (gs if opts_ok else [])
+                   if not isinstance(g.get("options", []), list)
+                   or any(not isinstance(o, dict) for o in g.get("options", []))]
+        if bad_grp:
+            errs.append(f"{tag}: 组 {'、'.join(bad_grp)} 的 options 必须是对象数组,"
+                        f"每项至少含 key/label —— 不是字符串列表")
+            opts_ok = False
+
+        groups = {g.get("id"): g for g in gs if isinstance(g, dict)}
         if "main" not in groups:
             errs.append(f"{tag}: 缺 main 组")
 
@@ -95,6 +115,9 @@ def validate(doc):
         errs.extend(_check_rules_threshold(ev, tag, logic_counts))
         errs.extend(_check_reviewed(ev, tag))
         errs.extend(_check_demo(q, ev, tag))
+
+        if not opts_ok:
+            continue        # 选项结构坏掉,建议措辞/分支对称/reveal 三项无从校验
 
         if not q.get("advice_allowed", False):
             for g in q.get("groups", []):
@@ -121,6 +144,27 @@ def validate(doc):
             errs.extend(_check_link(kind, it, layer_of))
 
     return errs
+
+
+def code_rev():
+    """当前仓库的 HEAD。单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。
+    仓库外运行(chat/agent 环境)返回空串。"""
+    import subprocess
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                              text=True, timeout=5).stdout.strip()
+    except Exception:
+        return ""
+
+
+def render_html(doc, template):
+    """把题目数据注入模板的 qdata 块。模板不含任何项目内容,数据只此一处。"""
+    if PLACEHOLDER not in template:
+        raise ValueError(f"模板缺占位符 {PLACEHOLDER}")
+    doc = {**doc, "doc": {**doc["doc"], "code_rev": doc["doc"].get("code_rev") or code_rev()}}
+    # </script> 会提前闭合数据块;JSON 里的 < 一律转义,不影响 json.loads
+    payload = json.dumps(doc, ensure_ascii=False).replace("<", "\\u003c")
+    return template.replace(PLACEHOLDER, payload)
 
 
 def _norm(s):
@@ -273,6 +317,10 @@ def main():
     print(f"✓ 校验通过: {len(doc['questions'])} 道题 / {len(doc['roles'])} 个角色")
     if args.check:
         return
+    out = Path(args.out or f"confirm-{doc['doc']['id']}-r{doc['doc']['round']}.html")
+    out.write_text(render_html(doc, TEMPLATE_PATH.read_text(encoding="utf-8")),
+                   encoding="utf-8")
+    print(f"✓ 已出包 {out}（{out.stat().st_size // 1024} KB，单文件自包含）")
 
 
 if __name__ == "__main__":

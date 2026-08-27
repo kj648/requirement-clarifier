@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>需求确认单</title>
+<style>
+:root{
+  /* 记账凭证纸：浅青绿纸、蓝黑墨、金额栏红 */
+  --paper:#E9EEE6;
+  --sheet:#FCFDFA;
+  --sheet-2:#F4F7F1;
+  --ink:#18232B;
+  --ink-70:#4A585F;
+  --ink-45:#7B878C;
+  --rule:#D3DBCE;
+  --rule-2:#E4EADF;
+  --red:#B5342B;
+  --red-soft:#F6E7E4;
+  --blue:#1F3A5F;
+  --green:#3F6B4E;
+  --amber:#8A6A1F;
+
+  --serif:"Songti SC","STSong","Source Han Serif SC","Noto Serif CJK SC",serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,system-ui,sans-serif;
+  --mono:"SF Mono","Menlo","Consolas","Courier New",monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.75;
+  /* 账簿横线 */
+  background-image:linear-gradient(var(--rule-2) 1px,transparent 1px);
+  background-size:100% 30px;
+}
+.wrap{max-width:1140px;margin:0 auto;padding:28px 20px 120px}
+
+/* ── 单据抬头 ───────────────────────────────── */
+.masthead{
+  background:var(--sheet);border:1px solid var(--rule);
+  border-top:3px solid var(--ink);
+  padding:22px 24px;display:flex;gap:24px;align-items:flex-start;
+  box-shadow:0 1px 0 rgba(24,35,43,.06);
+}
+.masthead-main{flex:1;min-width:0}
+.doc-kicker{
+  font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+  color:var(--ink-45);text-transform:uppercase;margin-bottom:6px;
+}
+h1{
+  font-family:var(--serif);font-weight:600;
+  font-size:clamp(22px,3.4vw,32px);line-height:1.3;margin:0 0 10px;
+  letter-spacing:.01em;
+}
+.doc-meta{font-size:13px;color:var(--ink-70);line-height:1.9}
+.doc-meta b{color:var(--ink);font-weight:600}
+.seal{
+  flex:0 0 auto;border:1.5px solid var(--red);color:var(--red);
+  padding:10px 12px;text-align:center;font-family:var(--mono);
+  line-height:1.5;letter-spacing:.06em;
+}
+.seal .no{font-size:15px;font-weight:700;display:block}
+.seal .v{font-size:10px;opacity:.85}
+.seal .due{font-size:10px;margin-top:6px;padding-top:6px;border-top:1px solid var(--red);opacity:.9}
+
+.howto{
+  margin-top:0;background:var(--sheet-2);border:1px solid var(--rule);border-top:none;
+  padding:12px 24px;font-size:13px;color:var(--ink-70);
+}
+.howto b{color:var(--ink)}
+
+/* ── 进度条（吸顶） ─────────────────────────── */
+.statusbar{
+  position:sticky;top:0;z-index:40;margin:18px 0 0;
+  background:var(--sheet);border:1px solid var(--rule);
+  display:flex;align-items:center;gap:16px;padding:10px 16px;
+  box-shadow:0 2px 10px rgba(24,35,43,.07);
+}
+.meter{flex:0 0 132px;height:6px;background:var(--rule);position:relative}
+.meter i{position:absolute;inset:0 auto 0 0;width:0;background:var(--blue);transition:width .35s ease}
+.status-text{font-size:13px;color:var(--ink-70);flex:1;min-width:0}
+.status-text .num{font-family:var(--mono);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.status-text .warn{color:var(--red);font-weight:600}
+.btn{
+  font:inherit;font-size:13px;border:1px solid var(--ink);background:var(--ink);color:#fff;
+  padding:7px 16px;cursor:pointer;font-weight:600;letter-spacing:.02em;
+}
+.btn:hover{background:#0d181f}
+.btn.ghost{background:transparent;color:var(--ink)}
+.btn.ghost:hover{background:var(--sheet-2)}
+.btn[disabled]{opacity:.38;cursor:not-allowed;background:var(--ink-45);border-color:var(--ink-45)}
+.btn:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,.opt:focus-visible{
+  outline:2px solid var(--blue);outline-offset:2px
+}
+
+/* ── 主体两栏 ───────────────────────────────── */
+.body{display:grid;grid-template-columns:180px 1fr;gap:36px;margin-top:26px;align-items:start}
+
+/* 题号索引 */
+.rail{position:sticky;top:74px}
+.rail-hd{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--ink-45);margin-bottom:10px}
+.rail ol{list-style:none;margin:0;padding:0}
+.rail li{margin:0}
+.rail a{
+  display:flex;gap:9px;align-items:baseline;text-decoration:none;color:var(--ink-70);
+  padding:4px 6px;font-size:13px;border-left:2px solid transparent;
+}
+.rail a:hover{background:var(--sheet);color:var(--ink)}
+.rail a.on{border-left-color:var(--blue);background:var(--sheet);color:var(--ink)}
+.rail .dot{
+  flex:0 0 auto;width:9px;height:9px;margin-top:6px;border:1.5px solid var(--ink-45);border-radius:50%;
+}
+.rail a[data-st="done"] .dot{background:var(--blue);border-color:var(--blue)}
+.rail a[data-st="skip"] .dot{border-color:var(--rule);background:
+  linear-gradient(45deg,transparent 44%,var(--ink-45) 44%,var(--ink-45) 56%,transparent 56%)}
+.rail a[data-st="must"] .dot{border-color:var(--red);border-width:2px}
+.rail .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── 区块 ───────────────────────────────────── */
+.part{margin-bottom:44px}
+.part-hd{display:flex;align-items:baseline;gap:12px;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:4px}
+.part-hd h2{font-family:var(--serif);font-size:19px;font-weight:600;margin:0}
+.part-hd .hint{font-size:12.5px;color:var(--ink-45)}
+
+/* 核对表 */
+.ledger{width:100%;border-collapse:collapse;background:var(--sheet);font-size:14px;margin-top:16px}
+.ledger th,.ledger td{border:1px solid var(--rule);padding:10px 12px;vertical-align:top;text-align:left}
+.ledger thead th{background:var(--sheet-2);font-size:12px;letter-spacing:.06em;color:var(--ink-70);font-weight:600}
+.ledger td.n{width:42px;text-align:center;font-family:var(--mono);color:var(--ink-45);border-right:1.5px solid var(--red)}
+.ledger td.rm{width:26%;color:var(--ink-70);font-size:13px;background:var(--sheet-2)}
+.ledger em{font-style:normal;background:#FBF3D9;padding:0 2px;box-shadow:0 1px 0 var(--amber)}
+
+/* ── 题目 ───────────────────────────────────── */
+.q{background:var(--sheet);border:1px solid var(--rule);margin-top:18px;scroll-margin-top:82px}
+.q.answered{border-left:3px solid var(--blue)}
+.q-hd{display:flex;gap:14px;padding:16px 20px 12px;border-bottom:1px dashed var(--rule)}
+.q-no{
+  font-family:var(--serif);font-size:26px;line-height:1;font-weight:600;color:var(--ink);
+  flex:0 0 auto;min-width:34px;font-variant-numeric:tabular-nums;
+}
+.q-hd .h{flex:1;min-width:0}
+.q-t{font-family:var(--serif);font-size:17px;font-weight:600;line-height:1.5;margin:0 0 7px}
+.tags{display:flex;flex-wrap:wrap;gap:7px}
+.tag{
+  font-size:11.5px;font-family:var(--mono);letter-spacing:.04em;padding:2px 7px;
+  border:1px solid var(--rule);color:var(--ink-70);background:var(--sheet-2);
+}
+.tag.who{border-color:#C8D2DE;color:var(--blue);background:#EEF3F8}
+.tag.first{border-color:var(--red);color:var(--red);background:var(--red-soft);font-weight:700}
+.tag.done{border-color:var(--green);color:var(--green);background:#EAF1EB}
+
+.q-bd{padding:14px 20px 18px}
+.bg{
+  font-size:13.5px;color:var(--ink-70);background:var(--sheet-2);
+  border-left:2px solid var(--rule);padding:9px 13px;margin:0 0 14px;
+}
+.bg b{color:var(--ink)}
+
+.grp{margin-bottom:14px}
+.grp-q{font-size:13.5px;font-weight:600;margin-bottom:7px;color:var(--ink)}
+.opts{display:flex;flex-direction:column;gap:6px}
+.opts.inline{flex-direction:row;flex-wrap:wrap;gap:8px}
+.opt{
+  display:flex;gap:10px;align-items:flex-start;cursor:pointer;
+  border:1px solid var(--rule);background:#fff;padding:9px 12px;font-size:14px;line-height:1.6;
+  transition:border-color .15s,background .15s;
+}
+.opts.inline .opt{padding:6px 11px;font-size:13.5px}
+.opt:hover{border-color:var(--ink-45);background:var(--sheet-2)}
+.opt input{position:absolute;opacity:0;width:0;height:0}
+.opt .mk{
+  flex:0 0 auto;width:14px;height:14px;margin-top:4px;border:1.5px solid var(--ink-45);
+  border-radius:50%;position:relative;
+}
+.opt input[type=checkbox]+.mk{border-radius:2px}
+.opt .k{font-family:var(--mono);font-weight:700;margin-right:4px}
+.opt:has(input:checked){border-color:var(--blue);background:#F0F5FA;box-shadow:inset 0 0 0 1px var(--blue)}
+.opt:has(input:checked) .mk{border-color:var(--blue);background:var(--blue)}
+.opt:has(input:checked) .mk::after{
+  content:"";position:absolute;inset:3px;background:#fff;border-radius:50%;
+}
+.opt input[type=checkbox]:checked+.mk::after{border-radius:0}
+.opt .cost{color:var(--ink-45);font-size:13px}
+
+/* 条件块 */
+.cond{
+  display:none;margin-top:10px;padding:12px 14px;background:#FAFBF8;
+  border:1px dashed var(--blue);
+}
+.cond.show{display:block;animation:drop .22s ease}
+@keyframes drop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.cond-hd{font-size:12px;font-family:var(--mono);color:var(--blue);letter-spacing:.04em;margin-bottom:9px}
+.skipped{
+  display:none;margin-top:10px;padding:10px 14px;background:var(--sheet-2);
+  border:1px dashed var(--rule);color:var(--ink-45);font-size:13px;
+}
+.skipped.show{display:block}
+
+/* 签名元素：演示数字结算条 */
+.demo{margin-top:14px;border:1px solid var(--rule);background:#fff}
+.demo-hd{
+  display:flex;justify-content:space-between;gap:12px;align-items:baseline;
+  padding:8px 13px;background:var(--sheet-2);border-bottom:1px solid var(--rule);
+}
+.demo-hd .lb{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--red)}
+.demo-hd .given{font-size:12.5px;color:var(--ink-70);text-align:right}
+.demo-hd .given span{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+.demo table{width:100%;border-collapse:collapse}
+.demo td{padding:7px 13px;font-size:13.5px;border-top:1px solid var(--rule-2)}
+.demo tr:first-child td{border-top:none}
+.demo td.k{color:var(--ink-70)}
+.demo td.v{
+  width:34%;text-align:right;font-family:var(--mono);font-weight:700;
+  font-variant-numeric:tabular-nums;border-left:1.5px solid var(--red);
+}
+.demo tr.hit td{background:#EEF4FA;color:var(--ink)}
+.demo tr.hit td.v{color:var(--blue)}
+.demo tr.hit td.k::before{content:"▸ ";color:var(--red);font-weight:700}
+
+/* 作答区 */
+.ans{margin-top:14px}
+.ans label{display:block;font-size:12px;font-family:var(--mono);letter-spacing:.1em;color:var(--ink-45);margin-bottom:5px}
+textarea,input[type=text]{
+  width:100%;font:inherit;font-size:14px;color:var(--ink);background:#fff;
+  border:1px solid var(--rule);padding:9px 11px;resize:vertical;
+}
+textarea::placeholder,input::placeholder{color:#A9B3B7}
+
+/* 阻塞原因表 */
+.tbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:13.5px;background:#fff}
+.tbl th,.tbl td{border:1px solid var(--rule);padding:0}
+.tbl thead th{background:var(--sheet-2);padding:7px 10px;font-size:12px;text-align:left;color:var(--ink-70)}
+.tbl td input{border:none;padding:8px 10px}
+.tbl td:first-child{border-right:1.5px solid var(--red)}
+.addrow{margin-top:7px;font-size:12.5px;background:none;border:1px dashed var(--rule);color:var(--ink-70);padding:5px 11px;cursor:pointer;font-family:inherit}
+.addrow:hover{border-color:var(--ink-45);color:var(--ink)}
+
+/* 落款 */
+.signoff{background:var(--sheet);border:1px solid var(--rule);border-top:3px solid var(--ink);padding:20px 24px;margin-top:40px}
+.signoff h2{font-family:var(--serif);font-size:17px;margin:0 0 4px}
+.signoff .why{font-size:12.5px;color:var(--red);margin:0 0 16px}
+.sign-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:16px;align-items:end}
+.fld label{display:block;font-size:12px;font-family:var(--mono);letter-spacing:.08em;color:var(--ink-45);margin-bottom:5px}
+.fld label .req{color:var(--red)}
+.stamp{
+  flex:0 0 auto;width:92px;height:92px;border:1.5px dashed var(--red);color:var(--red);
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  font-size:11px;font-family:var(--mono);line-height:1.6;opacity:.7;
+}
+
+/* 导出条 */
+.dock{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--sheet);
+  border-top:1px solid var(--rule);box-shadow:0 -3px 14px rgba(24,35,43,.1);
+  padding:11px 20px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;
+}
+.dock .why{font-size:12.5px;color:var(--red)}
+.dock .ok{font-size:12.5px;color:var(--green)}
+
+dialog{border:1px solid var(--ink);border-top:3px solid var(--ink);background:var(--sheet);padding:0;max-width:840px;width:92vw}
+dialog::backdrop{background:rgba(24,35,43,.45)}
+.dlg-hd{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--rule)}
+.dlg-hd h3{font-family:var(--serif);margin:0;font-size:17px}
+.dlg-bd{padding:0}
+.dlg-bd pre{
+  margin:0;max-height:52vh;overflow:auto;padding:16px 20px;font-family:var(--mono);
+  font-size:12px;line-height:1.7;white-space:pre-wrap;background:#fff;color:var(--ink);
+}
+.dlg-ft{padding:12px 20px;border-top:1px solid var(--rule);display:flex;gap:10px;justify-content:flex-end;align-items:center}
+.dlg-ft .note{margin-right:auto;font-size:12px;color:var(--ink-70)}
+
+/* 逐条核对 */
+.ledger td.chk,.ledger th.chk{width:118px;background:#fff}
+.mini{display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;padding:2px 0}
+.mini input{position:absolute;opacity:0;width:0;height:0}
+.mini .mk{width:13px;height:13px;border:1.5px solid var(--ink-45);border-radius:50%;position:relative;flex:0 0 auto}
+.mini:has(input:checked){color:var(--blue);font-weight:600}
+.mini:has(input:checked) .mk{border-color:var(--blue);background:var(--blue)}
+.mini:has(input:checked) .mk::after{content:"";position:absolute;inset:3px;background:#fff;border-radius:50%}
+.p1why{display:none;margin-top:6px;font-size:13px}
+.ledger td.chk.open .p1why{display:block}
+
+/* 依据 */
+.ev{margin:-4px 0 12px;border:1px solid var(--rule);background:var(--sheet-2)}
+.ev.tier-guess{border-color:var(--red);background:var(--red-soft)}
+.ev summary{list-style:none;cursor:pointer;display:flex;gap:9px;align-items:center;padding:7px 12px;font-size:13px}
+.ev summary::-webkit-details-marker{display:none}
+.ev summary::after{content:"▾";margin-left:auto;color:var(--ink-45)}
+.ev[open] summary::after{content:"▴"}
+.ev-badge{font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:2px 7px;border:1px solid}
+.ev-badge.src{color:var(--green);border-color:#B9CDBE;background:#EAF1EB}
+.ev-badge.code{color:var(--blue);border-color:#C4D1E0;background:#EEF3F8}
+.ev-badge.guess{color:#fff;border-color:var(--red);background:var(--red);font-weight:700}
+.ev-more{color:var(--ink-45)}
+.ev-b{padding:2px 12px 11px;border-top:1px dashed var(--rule)}
+.cite{display:flex;gap:8px;align-items:baseline;padding:6px 0;font-size:12.5px}
+.cite-k{font-family:var(--mono);font-size:10.5px;flex:0 0 auto;color:var(--ink-45)}
+.cite code{font-family:var(--mono);font-size:11.5px;color:var(--ink-70);word-break:break-all}
+.cite.none{color:var(--red);font-size:13px}
+.ev-weak{margin-top:7px;padding:8px 10px;background:#fff;border-left:2px solid var(--red);font-size:13px;color:var(--ink)}
+
+.usage{display:inline-block;margin-top:6px;color:var(--ink-45);font-size:12.5px;line-height:1.7}
+
+/* 收件人分区 */
+.whorow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex-basis:100%;
+  padding-top:9px;margin-top:2px;border-top:1px dashed var(--rule)}
+.whorow .lb{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink-45);margin-right:2px}
+.whochip{font:inherit;font-size:12.5px;padding:3px 10px;border:1px solid var(--rule);
+  background:#fff;color:var(--ink-70);cursor:pointer}
+.whochip:hover{border-color:var(--ink-45);color:var(--ink)}
+.whochip.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+.whochip .c{font-family:var(--mono);opacity:.75;margin-left:4px}
+.q.offrole{opacity:.55}
+.q.offrole:not(.peek) .q-bd{display:none}
+.q.offrole .q-hd{cursor:pointer}
+.q.offrole .peekhint{font-size:12px;color:var(--blue);margin-top:6px;display:block}
+.q.peek{opacity:1}
+.rail a.dim{opacity:.4}
+
+/* 人读回执 */
+.rc{padding:16px 20px}
+.rc-cards{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.rc-card{flex:1 1 88px;border:1px solid var(--rule);background:#fff;padding:9px 11px;text-align:center}
+.rc-card b{display:block;font-family:var(--mono);font-size:19px;font-variant-numeric:tabular-nums;line-height:1.2}
+.rc-card span{font-size:11.5px;color:var(--ink-45)}
+.rc-card.bad{border-color:var(--red);background:var(--red-soft)}
+.rc-card.bad b{color:var(--red)}
+.rc-sign{font-size:13px;padding:9px 12px;background:var(--sheet-2);border-left:2px solid var(--green);margin-bottom:14px}
+.rc-sign.unsigned{border-left-color:var(--red);background:var(--red-soft);color:var(--ink)}
+.rc-clash{font-size:13px;padding:10px 12px;border:1px solid var(--red);background:var(--red-soft);margin-bottom:14px;line-height:1.7}
+.rc-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule)}
+.rc-list li{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:10px 2px;border-bottom:1px solid var(--rule-2)}
+.rc-list .n{font-family:var(--serif);font-size:17px;color:var(--ink-45);text-align:right;font-variant-numeric:tabular-nums}
+.rc-list .qt{font-size:13px;color:var(--ink-45);margin-bottom:2px}
+.rc-list .a{font-size:14px;font-weight:600}
+.rc-list .sub{display:block;font-size:12.5px;color:var(--ink-70);font-weight:400;margin-top:3px}
+.rc-list li.no .a{color:var(--red)}
+.rc-list li.gap .a{color:var(--amber)}
+.rc-raw{border-top:1px solid var(--rule)}
+.rc-raw summary{cursor:pointer;padding:10px 20px;font-size:12.5px;color:var(--ink-45)}
+.rc-raw summary:hover{color:var(--ink)}
+
+/* 跨题联动 */
+.grp.na{position:relative;opacity:.45}
+.grp.na::after{content:attr(data-na-note);position:absolute;inset:0;display:flex;
+  align-items:center;padding:8px 12px;background:rgba(244,247,241,.93);
+  border:1px dashed var(--ink-45);font-size:12.5px;color:var(--ink-70);opacity:1}
+.carry-hint{display:none;margin-top:5px;font-size:12px;color:var(--blue)}
+.carry-hint.on{display:block}
+input.carried{border-color:var(--blue);background:#F4F8FC}
+.clash{display:none;margin:0 0 14px;padding:11px 14px;background:var(--red-soft);
+  border:1px solid var(--red);border-left-width:3px;font-size:13.5px;line-height:1.7}
+.clash.show{display:block}
+.clash b{color:var(--red)}
+.clash textarea{margin-top:8px;background:#fff}
+
+/* 证伪出口 */
+.deny{margin:0 0 13px}
+.deny-t{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--ink-45);cursor:pointer}
+.deny-t input{position:absolute;opacity:0;width:0;height:0}
+.deny-t .mk{width:13px;height:13px;border:1.5px solid var(--ink-45);position:relative;flex:0 0 auto}
+.deny-t:hover{color:var(--red)}
+.deny-t:has(input:checked){color:var(--red);font-weight:600}
+.deny-t:has(input:checked) .mk{background:var(--red);border-color:var(--red)}
+.deny-w{display:none;margin-top:8px}
+.deny.on .deny-w{display:block}
+.q.denied{border-left:3px solid var(--red);opacity:.92}
+.q.denied .q-bd .grp,.q.denied .demo{opacity:.4}
+.opt.none{border-style:dashed}
+.opt.other{border-style:dashed;color:var(--ink-70)}
+.opt.other:has(input:checked){color:var(--ink);border-style:solid}
+
+.why2{font-size:12.5px;color:var(--ink-70);margin:0 0 16px}
+.sign-grid{grid-template-columns:1fr 1fr 1fr}
+#s-date{background:var(--sheet-2);color:var(--ink-70)}
+
+.rev{display:block;margin-top:4px;color:var(--ink-45);font-size:12px;font-family:var(--mono)}
+.layer-hd{margin:26px 0 8px;padding:7px 12px;background:var(--sheet-2);
+  border-left:2px solid var(--ink-45);font-size:13px;color:var(--ink-70)}
+
+/* 依据两层：白话在外，坐标折叠在内 */
+.code-cite{display:block;padding:8px 0}
+.code-cite .logic{font-size:13.5px;line-height:1.75;color:var(--ink)}
+.code-cite .logic b{color:var(--blue)}
+.logic-note{color:var(--ink-45);font-size:12.5px}
+.coords{margin-top:7px}
+.coords summary{cursor:pointer;font-size:12px;color:var(--ink-45);font-family:var(--mono)}
+.coords summary:hover{color:var(--ink)}
+.coords>div,.coords .brs{margin-top:6px}
+.coords .entry{font-size:12px;color:var(--ink-70)}
+.coords .brs{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-70)}
+.demo-assumed{padding:7px 13px;border-top:1px dashed var(--red);
+  background:var(--red-soft);font-size:12.5px;color:var(--ink)}
+.rule-cite .logic b{color:var(--green)}
+.unreviewed{margin-top:8px;padding:6px 10px;background:#FBF3D9;
+  border-left:2px solid var(--amber);font-size:12.5px;color:var(--ink)}
+.reviewed{margin-top:8px;padding:6px 10px;background:#EAF1EB;
+  border-left:2px solid var(--green);font-size:12.5px;color:var(--ink-70)}
+
+@media (max-width:860px){
+  .body{grid-template-columns:1fr;gap:18px}
+  .rail{position:static;border-bottom:1px solid var(--rule);padding-bottom:8px}
+  .rail ol{display:flex;overflow-x:auto;gap:2px}
+  .rail a{flex-direction:column;align-items:center;padding:6px 9px;border-left:none;border-bottom:2px solid transparent}
+  .rail a.on{border-bottom-color:var(--blue)}
+  .rail .t{display:none}
+  .rail .dot{margin:0}
+  .rail a::after{content:attr(data-n);font-family:var(--mono);font-size:12px}
+  .masthead{flex-direction:column-reverse;gap:14px}
+  .seal{align-self:flex-start}
+  .sign-grid{grid-template-columns:1fr 1fr}
+  .stamp{grid-column:1/-1}
+  .statusbar{flex-wrap:wrap}
+  .status-text{order:3;flex-basis:100%}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media print{
+  body{background:#fff;background-image:none}
+  .statusbar,.dock,.rail,.howto{display:none!important}
+  .body{grid-template-columns:1fr}
+  .q,.masthead,.signoff{break-inside:avoid;box-shadow:none}
+  .cond{display:block!important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+
+<script id="qdata" type="application/json">__QUESTIONNAIRE_DATA__</script>
+
+<header class="masthead" id="masthead"></header>
+<div class="howto" id="howto"></div>
+<div class="statusbar">
+  <div class="meter"><i id="meter"></i></div>
+  <div class="status-text" id="statusText">尚未开始</div>
+  <button class="btn ghost" type="button" onclick="jumpNext()">跳到下一道未答</button>
+  <div class="whorow" id="whoRow"></div>
+</div>
+<div class="body">
+  <nav class="rail" aria-label="题号索引">
+    <div class="rail-hd">题号索引</div>
+    <ol id="rail"></ol>
+  </nav>
+  <main>
+    <section class="part" id="part1"></section>
+    <section class="part" id="part2"></section>
+  </main>
+</div>
+<section class="signoff" id="signoff"></section>
+</div>
+
+<div class="dock">
+  <span id="dockWhy" class="why"></span>
+  <button class="btn" id="btnExport" type="button" onclick="openReceipt()">导出回执</button>
+  <button class="btn ghost" type="button" onclick="window.print()">打印／存 PDF</button>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-hd"><h3>发回之前，请过一眼</h3><button class="btn ghost" type="button" onclick="dlg.close()">关闭</button></div>
+  <div class="dlg-bd">
+    <div class="rc" id="rcBody"></div>
+    <details class="rc-raw">
+      <summary>查看要发回给开发的原始文本（技术细节，不看也没关系）</summary>
+      <pre id="receipt"></pre>
+    </details>
+  </div>
+  <div class="dlg-ft">
+    <span class="note">下载失败（如在微信里打开）就点「复制全文」，粘贴到聊天窗发回。</span>
+    <button class="btn ghost" type="button" onclick="copyReceipt(this)">复制全文</button>
+    <button class="btn" type="button" onclick="downloadReceipt()">下载 .md 文件</button>
+  </div>
+</dialog>
+
+<script>
+/* ── 渲染器：题目内容全部来自注入的 qdata，模板本身不含任何项目内容 ──────────
+   必须先跑完再取 .q 节点：下面的 QS、索引、兜底出口都依赖已渲染好的 DOM。 */
+const DATA = JSON.parse(document.getElementById('qdata').textContent);
+const ROLE_NAME = Object.fromEntries(DATA.roles.map(r => [r.id, r.name]));
+const esc = s => String(s ?? '').replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const TIER_LABEL = {src:['原话','src'], code:['代码','code'], guess:['无据 · 请证伪','guess']};
+
+function renderMasthead(){
+  const d = DATA.doc, blocking = DATA.questions.filter(q => q.blocking).map(q => q.no);
+  document.getElementById('masthead').innerHTML = `
+    <div class="masthead-main">
+      <div class="doc-kicker">需求确认单 · 第 ${d.round} 轮</div>
+      <h1>${esc(d.title)}</h1>
+      <div class="doc-meta">
+        发出人：<b>${esc(d.sent_by)}</b>　·　发出日期：<b>${esc(d.sent_on)}</b><br>
+        本轮共 <b>${DATA.questions.length} 道</b>待确认问题${
+          blocking.length ? `，其中 <b>问题 ${blocking.join('、')}</b> 请先答` : ''}。<br>
+        <span class="usage">${esc(d.usage)}</span>
+        ${d.code_rev ? `<span class="rev">代码依据取自 ${esc(d.code_rev.slice(0,8))}
+          —— 这之后代码若有变动，结论需重新确认</span>` : ''}
+      </div>
+    </div>
+    <div class="seal"><span class="no">${esc(d.id)}</span>
+      <span class="v">v${d.round} / R${d.round}</span>
+      <span class="due">回填期限<br>${d.due_days ?? 3} 个工作日</span></div>`;
+  document.getElementById('howto').innerHTML =
+    '第一部分请<b>逐条核对</b>；第二部分请<b>点选</b>选项、必要处补充说明。'
+  + '标注「建议由 XX 回答」的题目不归您管，<b>请转交对应的人</b>——转交比替答重要。'
+  + '答不了的题可以留空先发，剩下的转交别人接着填。填完点底部<b>导出回执</b>发回即可。';
+  document.title = `需求确认单 · ${d.title}`;
+}
+
+function renderPart1(){
+  if(!DATA.part1?.length){ document.getElementById('part1').remove(); return; }
+  const rows = DATA.part1.map(r => `
+    <tr><td class="n">${r.n}</td><td>${esc(r.we_understand)}</td>
+      <td class="rm">${esc(r.note || '')}</td>
+      <td class="chk">
+        <label class="mini"><input type="radio" name="p1-${r.n}" value="ok"><span class="mk"></span>对</label>
+        <label class="mini"><input type="radio" name="p1-${r.n}" value="no"><span class="mk"></span>不对</label>
+        <textarea class="p1why" id="p1-${r.n}-why" rows="2" placeholder="哪里不对"></textarea>
+      </td></tr>`).join('');
+  document.getElementById('part1').innerHTML = `
+    <div class="part-hd"><h2>第一部分 · 我们理解的</h2>
+      <span class="hint">请逐条核对，不对的地方写在旁边</span></div>
+    <table class="ledger">
+      <thead><tr><th class="n">#</th><th>我们理解的</th><th class="rm">备注</th>
+        <th class="chk">对不对</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="ans"><label for="a-part1">上面之外，还想让我们知道的（选填）</label>
+      <textarea id="a-part1" rows="2"></textarea></div>`;
+}
+
+/* 依据区分两层：外层给业务看白话，坐标折叠在内层给开发与复核。
+   业务看不懂 <文件路径>:<行号> 这种坐标，直接怼给他是噪音。 */
+function citeHtml(c){
+  const kindLabel = c.kind === 'src' ? '原话' : '代码';
+  const coords = `<code>&gt; 证据: ${esc(c.path)}:${c.line} | "${esc(c.snippet)}"</code>`;
+  if(c.kind !== 'code')
+    return `<div class="cite"><span class="cite-k src">${kindLabel}</span>${coords}</div>`;
+  const brs = (c.branches || []).map(b =>
+    `<li>${esc(b.cond)} → ${esc(b.then)}${b.cite ? ` <code>${esc(b.cite)}</code>` : ''}</li>`).join('');
+  return `<div class="cite code-cite">
+      <div class="logic"><b>我们查代码看到系统现在是这么做的：</b>${esc(c.logic)}
+        <span class="logic-note">（这是开发读代码得出的理解，不是您说过的话——不对请直接指出）</span></div>
+      <details class="coords"><summary>代码位置与分支（开发看）</summary>
+        <div>${coords}</div>
+        <div class="entry">入口：<code>${esc(c.entry)}</code></div>
+        ${brs ? `<ul class="brs">${brs}</ul>` : ''}
+        ${c.branches_exhaustive === false
+          ? '<div class="ev-weak">⚠ 分支未读完，本题依据已降为「无据」处理</div>' : ''}
+      </details>
+    </div>`;
+}
+
+/* 业务概念层：有 rules_ref 就显示规则条目那句业务语言，代码坐标留给内层。 */
+function rulesHtml(ev){
+  return (ev.rules_ref || []).map(r =>
+    `<div class="cite rule-cite">
+       <div class="logic"><b>系统现在的规则是：</b>${esc(r.text)}
+         <span class="logic-note">（引自规则文档 ${esc(r.id)}，由开发读代码逆向、交规则
+           owner 验真——不对请直接指出）</span></div>
+       <details class="coords"><summary>规则文档位置（开发看）</summary>
+         <div><code>${esc(r.doc)} · ${esc(r.id)}</code></div></details>
+     </div>`).join('');
+}
+
+function reviewHtml(ev){
+  const rv = ev.reviewed;
+  if(!rv) return '<div class="unreviewed">未经独立复核——上面这段理解只有一个人读过代码</div>';
+  return `<div class="reviewed">已独立盲审（${esc(rv.on)}，发现 ${rv.diffs} 处差异`
+       + `${rv.diffs > 0 ? '，已处置' : ''}）</div>`;
+}
+
+/* 已有规则条目承载业务语言时，代码引用只出坐标，不再重复一句解读。 */
+function codeCoordsOnly(c){
+  if(c.kind !== 'code') return citeHtml(c);
+  const brs = (c.branches || []).map(b =>
+    `<li>${esc(b.cond)} → ${esc(b.then)}${b.cite ? ` <code>${esc(b.cite)}</code>` : ''}</li>`).join('');
+  return `<details class="coords"><summary>代码位置与分支（开发看）</summary>
+      <div><code>&gt; 证据: ${esc(c.path)}:${c.line} | "${esc(c.snippet)}"</code></div>
+      <div class="entry">入口：<code>${esc(c.entry)}</code></div>
+      ${brs ? `<ul class="brs">${brs}</ul>` : ''}
+      ${c.branches_exhaustive === false
+        ? '<div class="ev-weak">⚠ 分支未读完，本题依据已降为「无据」处理</div>' : ''}
+    </details>`;
+}
+
+function evHtml(q){
+  const ev = q.evidence || {}, [label, cls] = TIER_LABEL[ev.tier] || TIER_LABEL.guess;
+  const open = (ev.tier === 'guess' || ev.weak) ? ' open' : '';
+  const hasCode = (ev.cites || []).some(c => c.kind === 'code');
+  const cites = (rulesHtml(ev)
+    + (ev.rules_ref?.length ? (ev.cites || []).map(codeCoordsOnly).join('')
+                            : (ev.cites || []).map(citeHtml).join(''))
+    + (hasCode ? reviewHtml(ev) : ''))
+    || '<div class="cite none">这道题没有任何来源引用——纯粹是开发从盲区清单推的。</div>';
+  return `<details class="ev tier-${cls}"${open}>
+      <summary><span class="ev-badge ${cls}">${label}</span>
+        <span class="ev-more">这道题的依据</span></summary>
+      <div class="ev-b">${cites}${ev.weak ? `<div class="ev-weak">⚠ ${esc(ev.weak)}</div>` : ''}</div>
+    </details>
+    <div class="deny">
+      <label class="deny-t"><input type="checkbox" class="deny-x" data-q="${q.no}">
+        <span class="mk"></span>这题不成立：场景不存在，或问错了</label>
+      <textarea class="deny-w" id="deny-${q.no}" rows="2"
+        placeholder="为什么不成立——写清楚我们就删题，不用勉强在错的选项里挑一个"></textarea>
+    </div>`;
+}
+
+function optHtml(name, o, allowAdvice){
+  const isChoice = /^[A-Z]\d*$/.test(o.key);
+  const extra = o.kind === 'nonexistent' || o.kind === 'dontknow' ? ' none' : '';
+  const mark = o.kind === 'nonexistent' ? '⊘ ' : '';
+  const cost = allowAdvice && o.cost ? `<span class="cost">${esc(o.cost)}</span>` : '';
+  return `<label class="opt${extra}"><input type="radio" name="${name}" value="${esc(o.key)}"`
+       + ` data-label="${esc(o.label)}"><span class="mk"></span>`
+       + `<span>${isChoice ? `<span class="k">${esc(o.key)}.</span>` : ''}`
+       + `${mark}${esc(o.label)}${cost}</span></label>`;
+}
+
+function groupHtml(q, g){
+  const name = g.id === 'main' ? `q${q.no}` : `q${q.no}_${g.id}`;
+  const opts = g.options.map(o => optHtml(name, o, q.advice_allowed)).join('');
+  const ask = g.ask ? `<div class="grp-q"${g.askShort ? ` data-ask="${esc(g.askShort)}"` : ''}>`
+                    + `${esc(g.ask)}</div>` : '';
+  const na = DATA.links?.na?.find(l => l.target === `${q.no}.${g.id}`);
+  const naAttr = na ? ` data-na-when="${esc(whenToDom(na.when))}"`
+                    + ` data-na-note="${esc(na.note)}"` : '';
+  return `<div class="grp" data-grp="${g.id === 'main' ? 'main' : 'sub'}"${naAttr}>`
+       + `${ask}<div class="opts${g.inline ? ' inline' : ''}">${opts}</div></div>`;
+}
+
+function demoHtml(q){
+  if(!q.demo) return '';
+  const rows = q.demo.rows.map(r =>
+    `<tr data-hit="${r.when.join('|')}"><td class="k">${esc(r.k || '结果')}</td>`
+  + `<td class="v">${esc(r.v)}</td></tr>`).join('');
+  const assumed = q.demo.basis === 'assumed'
+    ? '<div class="demo-assumed">演示数字基于开发假设的算法，未从代码验证——'
+      + '如果实际不是这么算的，请在补充说明里写明</div>' : '';
+  return `<div class="demo"><div class="demo-hd"><span class="lb">演示数字</span>
+      <span class="given">${esc(q.demo.given)}</span></div>
+    <table><tbody>${rows}</tbody></table>${assumed}</div>`;
+}
+
+/** schema 用题号（"2=B"），DOM 用输入框 name（"q2=B"）。 */
+function whenToDom(expr){ return String(expr).replace(/(^|[\s&|])(\d+)(?=\s*(?:!=|=))/g, '$1q$2'); }
+
+function questionHtml(q){
+  const who = q.who.map(id => ROLE_NAME[id] || id).join(' + ');
+  const tags = [
+    q.blocking ? '<span class="tag first">请先答</span>' : '',
+    `<span class="tag who">建议由 ${esc(who)} 回答</span>`].join('');
+  const reveals = (q.reveal || []).map(r =>
+    `<div class="cond" data-when="q${q.no}=${esc(r.when)}">
+       <div class="cond-hd" data-ask="${esc(r.ask)}">因您选了 ${esc(r.when)}，还要定一件事</div>
+       <div class="fld"><label for="rv-${q.no}-${esc(r.when)}">${esc(r.ask)}</label>
+         <input type="text" id="rv-${q.no}-${esc(r.when)}"></div>
+     </div>`).join('');
+  const clash = (DATA.links?.clash || [])
+    .filter(c => _when_first_no(c.when) === q.no)
+    .map(c => `<div class="clash" data-clash-when="${esc(whenToDom(c.when))}">
+       <b>这两个选择打架了。</b>${esc(c.why)}
+       ${c.require_explain === false ? ''
+         : '<textarea id="clash-' + q.no + '" rows="2" placeholder="写明怎么处理，或回去改一个选择"></textarea>'}
+     </div>`).join('');
+  return `<article class="q" id="q${q.no}" data-no="${q.no}"
+      data-title="${esc(q.title)}" data-who="${esc(who)}"${q.blocking ? ' data-first="1"' : ''}
+      data-layer="${q.layer}">
+    <div class="q-hd"><div class="q-no">${q.no}</div><div class="h">
+      <h3 class="q-t">${esc(q.title)}</h3><div class="tags">${tags}</div></div></div>
+    <div class="q-bd">${evHtml(q)}
+      ${q.background ? `<p class="bg">${esc(q.background)}</p>` : ''}
+      ${q.groups.map(g => groupHtml(q, g)).join('')}
+      ${demoHtml(q)}${reveals}${clash}
+      <div class="ans"><label for="a-q${q.no}">补充说明（选填）</label>
+        <textarea id="a-q${q.no}" rows="2"></textarea></div>
+    </div></article>`;
+}
+
+/** clash 挂在其条件里题号最大的那道题上——业务是选到那一步才会撞上冲突。 */
+function _when_first_no(expr){
+  const nos = [...String(expr).matchAll(/(\d+)\s*(?:!=|=)/g)].map(m => +m[1]);
+  return nos.length ? Math.max(...nos) : null;
+}
+
+function renderPart2(){
+  const layers = [...new Set(DATA.questions.map(q => q.layer))].sort((a, b) => a - b);
+  document.getElementById('part2').innerHTML =
+    `<div class="part-hd"><h2>第二部分 · 待确认问题</h2>
+       <span class="hint">${DATA.questions.length} 题</span></div>`
+  + layers.map(n => {
+      const why = (DATA.layers || []).find(l => l.n === n)?.why;
+      const qs = DATA.questions.filter(q => q.layer === n);
+      const head = n === layers[0] ? ''
+        : `<div class="layer-hd">下面这些要等前面定了才有意义${why ? `（${esc(why)}）` : ''}</div>`;
+      return head + qs.map(questionHtml).join('');
+    }).join('');
+}
+
+function renderSignoff(){
+  document.getElementById('signoff').innerHTML = `
+    <h2>填写信息</h2>
+    <p class="why2">日期由页面在导出时自动记录，不用填。留名字是为了日后能找回是谁定的——
+      不填也能导出，但回执会自动标注「未署名」，我们只能按【开发拟定·待追认】入账。</p>
+    <div class="sign-grid">
+      <div class="fld"><label for="s-name">填写人（选填，浏览器会记住）</label>
+        <input type="text" id="s-name" placeholder="您的名字"></div>
+      <div class="fld"><label for="s-dept">部门（选填）</label>
+        <input type="text" id="s-dept" placeholder="部门"></div>
+      <div class="fld"><label>导出时间（自动）</label>
+        <input type="text" id="s-date" readonly></div>
+    </div>
+    <div class="ans" style="margin-top:14px">
+      <label for="s-relay">代答／转交说明</label>
+      <textarea id="s-relay" rows="2"
+        placeholder="例：问题 1、3 已电话确认过王芳；问题 2 已转交李姐"></textarea>
+    </div>`;
+}
+
+renderMasthead(); renderPart1(); renderPart2(); renderSignoff();
+
+const QS = [...document.querySelectorAll('.q')];
+/* 第一部分的条目号由数据决定 —— 写死 [1,2,3,4,5] 会让条目数不等于 5 的单子
+   在 refreshPart1() 里取到 null 而整页 JS 崩掉。 */
+const P1 = (DATA.part1 || []).map(r => r.n);
+
+/* 索引 */
+const rail = document.getElementById('rail');
+rail.innerHTML = QS.map(q =>
+  `<li><a href="#${q.id}" data-q="${q.id}" data-n="${q.dataset.no}"
+      ><span class="dot"></span><span class="t">${q.dataset.no}. ${q.dataset.title.replace(/["""]/g,'')}</span></a></li>`
+).join('');
+
+const val = name => (document.querySelector(`input[name="${name}"]:checked`)||{}).value || null;
+const txt = id => { const el=document.getElementById(id); return el ? el.value.trim() : ''; };
+const denied = q => q.querySelector('.deny-x').checked;
+
+/* 第一部分逐条核对 */
+function refreshPart1(){
+  P1.forEach(i=>{
+    const cell = document.getElementById(`p1-${i}-why`).closest('td');
+    cell.classList.toggle('open', val(`p1-${i}`)==='no');
+  });
+}
+
+/* 条件显隐 */
+function refreshConditions(){
+  document.querySelectorAll('.cond[data-when]').forEach(c=>{
+    const [n,v] = c.dataset.when.split('=');
+    c.classList.toggle('show', val(n)===v);
+  });
+  document.querySelectorAll('.skipped[data-skip]').forEach(s=>{
+    const [n,v] = s.dataset.skip.split('=');
+    s.classList.toggle('show', val(n)===v);
+  });
+  QS.forEach(q=>{
+    const on = denied(q);
+    q.classList.toggle('denied', on);
+    q.querySelector('.deny').classList.toggle('on', on);
+  });
+}
+
+/* 演示数字结算条 */
+function refreshDemos(){
+  document.querySelectorAll('.demo').forEach(d=>{
+    const chosen = new Set([...d.closest('.q').querySelectorAll('input:checked')].map(i=>i.value));
+    d.querySelectorAll('tr[data-hit]').forEach(tr=>
+      tr.classList.toggle('hit', tr.dataset.hit.split('|').every(k=>chosen.has(k))));
+  });
+}
+
+/* 进度 */
+function answered(q){
+  if(denied(q)) return true;
+  const main = q.querySelector('[data-grp="main"]');
+  if(main) return !!main.querySelector('input:checked');
+  return [...q.querySelectorAll('textarea,input[type=text]')].some(el=>el.value.trim());
+}
+function refreshStatus(){
+  let done=0, den=0, mustLeft=[];
+  QS.forEach(q=>{
+    const ok=answered(q);
+    if(ok) done++; else if(q.dataset.first) mustLeft.push(q.dataset.no);
+    if(denied(q)) den++;
+    q.classList.toggle('answered', ok && !denied(q));
+    let tag=q.querySelector('.tag.done');
+    const want = denied(q) ? '不成立' : (ok ? '已答' : null);
+    if(want && !tag){ tag=document.createElement('span'); tag.className='tag done'; q.querySelector('.tags').appendChild(tag); }
+    if(!want && tag) tag.remove();
+    if(want) q.querySelector('.tag.done').textContent = want;
+    const a=rail.querySelector(`a[data-q="${q.id}"]`);
+    a.dataset.st = ok ? (denied(q)?'skip':'done') : (q.dataset.first?'must':'');
+  });
+  const p1done = P1.filter(i=>val(`p1-${i}`)).length;
+  document.getElementById('meter').style.width = ((done+p1done)/(QS.length+P1.length)*100)+'%';
+  const st=[`已答 <span class="num">${done}</span> / <span class="num">${QS.length}</span>`];
+  if(P1.length) st.push(`核对 <span class="num">${p1done}</span> / <span class="num">${P1.length}</span>`);
+  if(den) st.push(`<span class="warn">${den} 题被判不成立</span>`);
+  if(mustLeft.length) st.push(`<span class="warn">问题 ${mustLeft.join('、')} 请先答</span>`);
+  const cl=clashes().length;
+  if(cl) st.push(`<span class="warn">${cl} 处选择互相打架，请看红框</span>`);
+  document.getElementById('statusText').innerHTML = st.join('　·　');
+  document.getElementById('dockWhy').textContent =
+    (done<QS.length ? `还有 ${QS.length-done} 题没答，也可以先导出、剩下的转交别人` : '');
+}
+
+function stamp(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+/* 跨题联动：cond 表达式支持 & 连接的等值判断 */
+function meets(expr){
+  return expr.split('&').every(t=>{ const [n,v]=t.trim().split('='); return val(n.trim())===v.trim(); });
+}
+/* derive：前面的选择让后面某组题在逻辑上不存在 → 置为不适用，不算漏答 */
+function refreshNA(){
+  document.querySelectorAll('[data-na-when]').forEach(g=>
+    g.classList.toggle('na', meets(g.dataset.naWhen)));
+}
+/* carry：把前面填过的事实（字段名、人名、天数）带到后面当默认值，可改 */
+function refreshCarry(){
+  document.querySelectorAll('[data-carry-from]').forEach(t=>{
+    const s=document.getElementById(t.dataset.carryFrom), hint=t.parentElement.querySelector('.carry-hint');
+    if(!s) return;
+    const sv=s.value.trim();
+    if(!sv){ t.dataset.auto='0'; }
+    else if(!t.value.trim() || t.value.trim()===(t.dataset.autoVal||'')){
+      // 空着、或还拿着上次自动填的值 → 可以带；业务一动手就不再覆盖
+      t.value=sv; t.dataset.autoVal=sv; t.dataset.auto='1';
+    } else { t.dataset.auto='0'; }
+    const on = t.dataset.auto==='1' && !!sv;
+    t.classList.toggle('carried', on);
+    if(hint){ hint.classList.toggle('on', on);
+      hint.textContent = on ? `沿用 ${t.dataset.carrySrc} 填的「${sv}」，不对可以直接改` : ''; }
+  });
+}
+/* clash：矛盾当场暴露，不等回执回来才由 AI 做冲突检测 */
+function clashes(){
+  return [...document.querySelectorAll('[data-clash-when]')].filter(c=>meets(c.dataset.clashWhen));
+}
+function refreshClash(){
+  document.querySelectorAll('[data-clash-when]').forEach(c=>
+    c.classList.toggle('show', meets(c.dataset.clashWhen)));
+}
+
+/* ── 收件人分区（借 to-questionnaire：先定收件人，题只瞄准该收件人的知识差） ──
+   一份单子的题散在多拨人手里；谁打开都只该先看自己那几道，其余可展开但不挡路。 */
+const ROLES = [...new Set(QS.flatMap(q=>q.dataset.who.split('+').map(s=>s.trim())))];
+let myRole = null;
+try{ myRole = localStorage.getItem('rc-role')||null; }catch(e){}
+function ownsRole(q, role){
+  return !role || q.dataset.who.split('+').map(s=>s.trim()).includes(role);
+}
+function buildWhoRow(){
+  const row=document.getElementById('whoRow');
+  row.innerHTML = '<span class="lb">我是</span>' +
+    [['', '全部'], ...ROLES.map(r=>[r,r])].map(([v,label])=>{
+      const mine = QS.filter(q=>ownsRole(q,v));
+      const left = mine.filter(q=>!answered(q)).length;
+      return `<button type="button" class="whochip${myRole===(v||null)?' on':''}" data-role="${v}">`
+           + `${label}<span class="c">${mine.length-left}/${mine.length}</span></button>`;
+    }).join('');
+  row.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{
+    myRole = b.dataset.role || null;
+    try{ localStorage.setItem('rc-role', myRole||''); }catch(e){}
+    QS.forEach(q=>q.classList.remove('peek'));
+    refreshAll();
+  });
+}
+function refreshRoles(){
+  QS.forEach(q=>{
+    const off = !ownsRole(q, myRole);
+    q.classList.toggle('offrole', off);
+    let hint=q.querySelector('.peekhint');
+    if(off && !hint){
+      hint=document.createElement('span'); hint.className='peekhint';
+      hint.textContent=`这题建议由 ${q.dataset.who} 回答 · 点标题也能展开自己填`;
+      q.querySelector('.q-hd .h').appendChild(hint);
+    }
+    if(!off && hint) hint.remove();
+    rail.querySelector(`a[data-q="${q.id}"]`).classList.toggle('dim', off);
+  });
+}
+document.addEventListener('click', e=>{
+  const hd=e.target.closest('.q.offrole .q-hd');
+  if(hd) hd.closest('.q').classList.toggle('peek');
+});
+
+function refreshAll(){
+  refreshPart1(); refreshConditions(); refreshNA(); refreshCarry(); refreshClash();
+  refreshDemos(); refreshStatus(); refreshRoles(); buildWhoRow();
+  document.getElementById('s-date').value = stamp();
+  try{ localStorage.setItem('rc-filler', txt('s-name')); }catch(e){}
+}
+document.addEventListener('input', refreshAll);
+document.addEventListener('change', refreshAll);
+
+function jumpNext(){
+  (QS.find(q=>!answered(q))||document.getElementById('signoff'))
+    .scrollIntoView({behavior:'smooth',block:'start'});
+}
+QS.forEach(q=>new IntersectionObserver(es=>es.forEach(e=>{
+  if(e.isIntersecting) rail.querySelectorAll('a').forEach(a=>a.classList.toggle('on', a.dataset.q===q.id));
+}),{rootMargin:'-80px 0px -70% 0px'}).observe(q));
+
+/* ── 回执 ─────────────────────────────────────────────── */
+function buildReceipt(){
+  const L=[], J={单据:DATA.doc.id, 轮次:DATA.doc.round, 代码依据:DATA.doc.code_rev,
+                 导出时间:stamp(), 第一部分:[], 题目:[]};
+  const name=txt('s-name');
+  const denies=QS.filter(denied).map(q=>q.dataset.no);
+  const unans=QS.filter(q=>!answered(q)).map(q=>q.dataset.no);
+  const p1done=P1.filter(i=>val(`p1-${i}`)).length;
+
+  L.push(`# 需求确认单回执：${DATA.doc.title}（第 ${DATA.doc.round} 轮）`);
+  L.push(`> 导出于 ${stamp()}（页面自动记录）· 发出 ${DATA.doc.sent_on} · 发出人 ${DATA.doc.sent_by}`);
+  L.push(`> 回执成色：已答 ${QS.length-unans.length}/${QS.length}`
+       + (denies.length?` · 判为不成立 ${denies.length} 题（问题 ${denies.join('、')}）`:'')
+       + (unans.length?` · 未答 ${unans.length} 题（问题 ${unans.join('、')}）`:'')
+       + (P1.length ? ` · 第一部分核对 ${p1done}/${P1.length}` : '')
+       + (clashes().length?` · ⚠ ${clashes().length} 处矛盾`:''));
+  if(!name) L.push('> ⚠ 未署名：本回执不得记为【业务确认】，须按【开发拟定·待追认】入账，回头补落款才能转正。');
+  const cls=clashes();
+  if(cls.length){
+    L.push('');
+    L.push('## ⚠ 填写时暴露的矛盾（请开发优先处理）');
+    cls.forEach(c=>{
+      const ta=c.querySelector('textarea');
+      L.push('');
+      L.push(`- 条件 \`${c.dataset.clashWhen}\` 同时成立：`
+        + c.textContent.replace(/\s+/g,' ').trim().slice(0,140) + '…');
+      L.push(`  业务说明：${ta && ta.value.trim() ? ta.value.trim() : '（未说明）'}`);
+      J.矛盾=J.矛盾||[]; J.矛盾.push({条件:c.dataset.clashWhen, 说明:ta?ta.value.trim():''});
+    });
+  }
+  if(P1.length){
+    L.push('');
+    L.push('## 第一部分 · 已确认事项（请核对）');
+    L.push('');
+    L.push('| # | 核对 | 说明 |');
+    L.push('|---|---|---|');
+    const p1txt=[];
+    P1.forEach(i=>{
+      const v=val(`p1-${i}`), why=txt(`p1-${i}-why`);
+      const s = v==='ok' ? '对' : v==='no' ? '不对' : '未表态';
+      L.push(`| ${i} | ${s} | ${v==='no'?(why||'（未写原因）'):''} |`);
+      p1txt.push(`${i} ${s}${v==='no'&&why?`（${why}）`:''}`);
+      J.第一部分.push({条:i, 核对:s, 说明:v==='no'?why:''});
+    });
+    L.push('');
+    const allOk = P1.every(i=>val(`p1-${i}`)==='ok');
+    L.push('【作答区】' + (allOk ? `${P1.length} 条全部核对为「对」，无异议`
+                                : '逐条核对：'+p1txt.join('；'))
+                       + (txt('a-part1') ? '；其他补充：'+txt('a-part1').replace(/\n/g,' ') : ''));
+  }
+  L.push('');
+  L.push('## 第二部分 · 待确认问题（请作答）');
+
+  QS.forEach(q=>{
+    const no=q.dataset.no, off=denied(q);
+    const rec={题号:no, 主选:null, 子项:{}, 跳过:[], 不成立:null, 补充:'', 依据:[]};
+    q.querySelectorAll('.ev code').forEach(c=>rec.依据.push(c.textContent.replace(/^&gt; ?/,'')));
+    const _ev = (DATA.questions.find(x=>String(x.no)===no)||{}).evidence || {};
+    if(_ev.rules_ref) rec.规则引用 = _ev.rules_ref;
+    rec.独立复核 = _ev.reviewed
+      || ((_ev.cites||[]).some(c=>c.kind==='code') ? '未复核' : null);
+    L.push('');
+    L.push(`### 问题 ${no}：${q.dataset.title}（建议由 ${q.dataset.who} 回答）${q.dataset.first?'（阻塞）':''}`);
+    if(off){
+      const why=txt('deny-'+no)||'（未写原因）';
+      L.push(`☒ 本题不成立（业务证伪）：${why}`);
+      rec.不成立=why;
+    }
+    const main=q.querySelector('[data-grp="main"]');
+    if(main) main.querySelectorAll('input').forEach(i=>{
+      const key=/^[A-Z]$/.test(i.value)?i.value+'. ':'';
+      const on = i.checked && !off;
+      L.push(`${on?'☑':'☐'} ${key}${i.dataset.label}`);
+      if(on) rec.主选=key+i.dataset.label;
+    });
+
+    const pairs=new Map();
+    const put=(ask,v)=>{ const k=ask.trim().replace(/[：:？?\s]+$/,'');
+      pairs.set(k, pairs.has(k)?pairs.get(k)+'／'+v:v); };
+    const askOfChoice=el=>{ const g=el.closest('.grp,.cond');
+      const h=g&&g.querySelector('.grp-q,.cond-hd');
+      return h?(h.dataset.ask||h.textContent):'其他'; };
+    const askOfField=el=>{ const lb=el.id&&q.querySelector(`label[for="${el.id}"]`);
+      return lb?lb.textContent:askOfChoice(el); };
+    if(!off){
+      q.querySelectorAll('[data-grp="sub"].na').forEach(g=>{
+        const ask=(g.querySelector('.grp-q')||{}).textContent||'该小问';
+        put(ask, `不适用（${g.dataset.naNote}）`);
+        rec.不适用=rec.不适用||[]; rec.不适用.push(g.dataset.naNote);
+      });
+      q.querySelectorAll('[data-grp="sub"]:not(.na) input:checked, .cond.show input:checked').forEach(i=>{
+        put(askOfChoice(i), i.dataset.label);
+        rec.子项[i.name]=rec.子项[i.name]?rec.子项[i.name]+'／'+i.dataset.label:i.dataset.label;
+      });
+      q.querySelectorAll('.cond.show input[type=text], [data-grp="sub"]:not(.na) textarea, .cond.show textarea').forEach(el=>{
+        if(el.value.trim()){ put(askOfField(el), el.value.trim()); rec.子项[el.id]=el.value.trim(); }
+      });
+    }
+    const subs=[...pairs].map(([k,v])=>`${k}：${v}`);
+    if(!off) q.querySelectorAll('.skipped.show').forEach(s=>{
+      const [n,v]=s.dataset.skip.split('=');
+      const line=`因问题 ${n.replace(/\D/g,'')} 选 ${v}，本题下属小问自动跳过（不算漏答）`;
+      subs.push(line); rec.跳过.push(line);
+    });
+    const extra=txt('a-q'+no); if(extra) rec.补充=extra;
+    L.push('【作答区】'+[off?`本题不成立：${txt('deny-'+no)||'（未写原因）'}`:'', ...subs, extra]
+      .filter(Boolean).join('；').replace(/\n/g,' '));
+    J.题目.push(rec);
+  });
+
+  L.push('');
+  L.push('## 填写信息');
+  L.push(`填写人：${name||'（未署名·导出自 HTML 确认单）'}　部门：${txt('s-dept')||'（未填）'}　日期：${stamp()}`);
+  if(txt('s-relay')) L.push(`代答／转交说明：${txt('s-relay')}`);
+  J.落款={填写人:name, 部门:txt('s-dept'), 导出时间:stamp(), 转交:txt('s-relay'),
+          已署名:!!name, 填写身份:myRole||'（未选身份，按全部题作答）'};
+  if(myRole) L.push(`填写身份：${myRole}（本轮只对该身份名下的题负责，其余题请确认是否已转交）`);
+  L.push('');
+  L.push('<!-- 机读区（供 check_questionnaire.py / AI 解析，业务无需理会） -->');
+  L.push('```json');
+  L.push(JSON.stringify(J));
+  L.push('```');
+  return L.join('\n');
+}
+
+const dlg=document.getElementById('dlg');
+/* esc 由上面的渲染器定义（多转义了引号），此处不再重复声明 —— 同一作用域两个
+   const esc 会让整段 <script> 直接 SyntaxError。 */
+
+/* 人读回执：业务不懂 markdown——预览就不该是 markdown。
+   摘要给填写人核对，原始文本折叠起来留给开发。 */
+function renderPreview(){
+  const name=txt('s-name'), dept=txt('s-dept');
+  const den=QS.filter(denied), un=QS.filter(q=>!answered(q));
+  const p1done=P1.filter(i=>val(`p1-${i}`)).length, cls=clashes();
+  const card=(v,l,bad)=>`<div class="rc-card${bad?' bad':''}"><b>${v}</b><span>${l}</span></div>`;
+
+  let h = '<div class="rc-cards">'
+    + card(`${QS.length-un.length}/${QS.length}`,'已答')
+    + (P1.length ? card(`${p1done}/${P1.length}`,'核对', p1done<P1.length) : '')
+    + (den.length?card(den.length,'判为不成立'):'')
+    + (un.length?card(un.length,'没答', true):'')
+    + (cls.length?card(cls.length,'矛盾', true):'')
+    + '</div>';
+
+  h += name
+    ? `<div class="rc-sign">署名：<b>${esc(name)}</b>${dept?' · '+esc(dept):''} · 导出于 ${stamp()}</div>`
+    : `<div class="rc-sign unsigned">⚠ 没留名字。回执照样能发，但开发只能按「待追认」入账，
+        日后要是有人问"这是谁定的"就查不到了。回上面填个名字更好。</div>`;
+
+  cls.forEach(c=>{
+    const ta=c.querySelector('textarea'), said=ta&&ta.value.trim();
+    h += `<div class="rc-clash"><b>⚠ 有一处选择互相打架</b>（${esc(c.dataset.clashWhen)}）：`
+       + (said ? `您的说明是「${esc(said)}」，会一起发给开发。` : `您还没写怎么处理——建议回去补一句，否则开发只能再来问一轮。`)
+       + '</div>';
+  });
+
+  h += '<ol class="rc-list">';
+  QS.forEach(q=>{
+    const no=q.dataset.no, off=denied(q);
+    const main=q.querySelector('[data-grp="main"] input:checked');
+    let cl='', ans;
+    if(off){ cl='no'; ans='本题不成立：'+(txt('deny-'+no)||'（没写原因）'); }
+    else if(main && main.value==='other'){ ans='都不是，实际是：'+(txt('other-'+no)||'（还没写实际口径）'); }
+    else if(main){ ans=(/^[A-Z]$/.test(main.value)?main.value+'. ':'')+main.dataset.label; }
+    else { cl='gap'; ans='还没答'+(q.dataset.first?'（这题标了「请先答」，后面的题要等它定）':''); }
+    const subs=[];
+    q.querySelectorAll('[data-grp="sub"].na').forEach(g=>
+      subs.push(`${(g.querySelector('.grp-q')||{}).textContent||''}：不适用（${g.dataset.naNote}）`));
+    if(!off) q.querySelectorAll('[data-grp="sub"]:not(.na) input:checked, .cond.show input:checked')
+      .forEach(i=>subs.push(i.dataset.label));
+    h += `<li class="${cl}"><span class="n">${no}</span><span>`
+       + `<span class="qt">${esc(q.dataset.title)}</span>`
+       + `<span class="a">${esc(ans)}`
+       + (subs.length?`<span class="sub">${esc(subs.join(' · '))}</span>`:'')
+       + '</span></span></li>';
+  });
+  h += '</ol>';
+  return h;
+}
+function openReceipt(){
+  document.getElementById('rcBody').innerHTML = renderPreview();
+  document.getElementById('receipt').textContent = buildReceipt();
+  dlg.showModal();
+}
+function downloadReceipt(){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([buildReceipt()],{type:'text/markdown;charset=utf-8'}));
+  a.download=`${DATA.doc.id}-确认单回执-${txt('s-name')||'未署名'}-${stamp().slice(0,10)}.md`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+async function copyReceipt(btn){
+  try{ await navigator.clipboard.writeText(buildReceipt()); btn.textContent='已复制 ✓';
+       setTimeout(()=>btn.textContent='复制全文',1800); }
+  catch(e){ const r=document.createRange(); r.selectNodeContents(document.getElementById('receipt'));
+    getSelection().removeAllRanges(); getSelection().addRange(r); btn.textContent='已选中，请按 ⌘C'; }
+}
+
+/* 兜底出口：一次性发单、业务异步回填，中间没有 AI —— 选项集猜错了业务当场没法跟 AI 说，
+   所以每题都必须留一条「都不是」的路，而不是逼人在错的选项里勉强挑一个。 */
+QS.forEach(q=>{
+  const no=q.dataset.no, main=q.querySelector('[data-grp="main"]');
+  if(!main) return;
+  const name=main.querySelector('input').name;
+  main.querySelector('.opts').insertAdjacentHTML('beforeend',
+    `<label class="opt other"><input type="radio" name="${name}" value="other"`
+   + ` data-label="都不是（实际口径见作答区）"><span class="mk"></span>`
+   + `<span>⊕ 都不是——我要选的不在这几个里</span></label>`);
+  main.insertAdjacentHTML('afterend',
+    `<div class="cond" data-when="${name}=other">`
+   + `<div class="cond-hd" data-ask="实际的口径是">那实际是怎样？照实写，别在上面几个里勉强挑一个</div>`
+   + `<div class="fld"><input type="text" id="other-${no}" placeholder="实际的口径／做法"></div></div>`);
+});
+
+try{ document.getElementById('s-name').value = localStorage.getItem('rc-filler')||''; }catch(e){}
+refreshAll();
+</script>
+</body>
+</html>

@@ -243,6 +243,12 @@ class TestValidate(unittest.TestCase):
         errs = bq.validate(d)
         self.assertTrue(any("links" in e for e in errs), errs)
 
+    def test_malformed_option_returns_error_not_exception(self):
+        d = doc()
+        d["questions"][0]["groups"][0]["options"] = ["oops-a-string"]
+        errs = bq.validate(d)                # 必须返回而不是抛
+        self.assertTrue(any("options" in e for e in errs), errs)
+
 
 if __name__ == "__main__":
     unittest.main()
