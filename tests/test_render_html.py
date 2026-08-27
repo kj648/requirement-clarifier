@@ -6,7 +6,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_questionnaire as bq
 
 EXAMPLE = (ROOT / "examples/demo-project/docs/requirements/questionnaires"
-                  "/2026-07-11-逾期提醒-r1.json")
+                  "/2026-07-11-报销打款-r1.json")
 
 
 class TestRenderHtml(unittest.TestCase):

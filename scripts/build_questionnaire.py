@@ -428,7 +428,7 @@ def render_md(doc):
 def infer_root(json_path):
     """从 json 的位置往上找项目根 —— 含 docs/requirements/ 的那一层。
 
-    rules_ref.doc 是相对项目根写的(如 docs/requirements/rules/reminder.md),
+    rules_ref.doc 是相对项目根写的(如 docs/requirements/rules/payout.md),
     而 json 自己就躺在 docs/requirements/questionnaires/ 下,所以项目根一定在
     它的祖先里。不推断的话每个调用点都得记得传 --root,忘一次就报「规则文档
     不存在」—— 本任务里已经踩了两次。

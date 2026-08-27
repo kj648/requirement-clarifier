@@ -22,9 +22,9 @@
 
 ```bash
 python3 scripts/build_questionnaire.py \
-  examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json --check
+  examples/demo-project/docs/requirements/questionnaires/2026-07-11-报销打款-r1.json --check
 python3 scripts/build_questionnaire.py \
-  examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json -o /tmp/confirm.html
+  examples/demo-project/docs/requirements/questionnaires/2026-07-11-报销打款-r1.json -o /tmp/confirm.html
 ```
 
 # 压测场景:判断题规则的回归测试

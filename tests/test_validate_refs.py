@@ -9,7 +9,7 @@ import build_questionnaire as bq
 class TestValidateRefs(unittest.TestCase):
     def _doc(self, rid="R3"):
         return {"questions": [{"no": 1, "evidence": {"rules_ref": [
-            {"id": rid, "doc": "rules/x.md", "text": "已还清的判定：余额清零即视为已还清"}]}}]}
+            {"id": rid, "doc": "rules/x.md", "text": "打款完成的判定：发起成功即计入已打"}]}}]}
 
     def _root(self, body):
         d = Path(tempfile.mkdtemp())
@@ -18,12 +18,12 @@ class TestValidateRefs(unittest.TestCase):
         return d
 
     def test_matches_h2_halfwidth_period(self):
-        root = self._root("## R3. 已还清的判定：余额清零即视为已还清\n正文\n")
+        root = self._root("## R3. 打款完成的判定：发起成功即计入已打\n正文\n")
         self.assertEqual(bq.validate_refs(self._doc(), root), [])
 
     def test_matches_h3_and_fullwidth_separators(self):
-        for head in ("### R3． 已还清的判定：余额清零即视为已还清",
-                     "## R3： 已还清的判定：余额清零即视为已还清"):
+        for head in ("### R3． 打款完成的判定：发起成功即计入已打",
+                     "## R3： 打款完成的判定：发起成功即计入已打"):
             root = self._root(head + "\n正文\n")
             self.assertEqual(bq.validate_refs(self._doc(), root), [],
                              f"标题格式应被接受: {head}")
@@ -39,7 +39,7 @@ class TestValidateRefs(unittest.TestCase):
 
     def test_drifted_text_reports_error(self):
         """规则文档改过了而题目里的 text 副本没跟上 —— 必须报出来。"""
-        root = self._root("## R3. 已还清的判定：改成按状态字段判\n")
+        root = self._root("## R3. 打款完成的判定：改成等银行回单到账\n")
         errs = bq.validate_refs(self._doc(), root)
         self.assertTrue(any("不一致" in e for e in errs), errs)
 
@@ -49,7 +49,7 @@ class TestInferRoot(unittest.TestCase):
         """rules_ref.doc 相对项目根写,而 json 就在 docs/requirements/ 下面 ——
         项目根一定在它的祖先里,不该逼每个调用点手动传 --root。"""
         j = (ROOT / "examples/demo-project/docs/requirements/questionnaires"
-                    "/2026-07-11-逾期提醒-r1.json")
+                    "/2026-07-11-报销打款-r1.json")
         self.assertEqual(bq.infer_root(j).resolve(),
                          (ROOT / "examples/demo-project").resolve())
 
@@ -63,7 +63,7 @@ class TestInferRoot(unittest.TestCase):
         """端到端:不传 --root,校验也该过。"""
         import json as _json, subprocess, sys as _sys
         j = (ROOT / "examples/demo-project/docs/requirements/questionnaires"
-                    "/2026-07-11-逾期提醒-r1.json")
+                    "/2026-07-11-报销打款-r1.json")
         p = subprocess.run([_sys.executable, str(ROOT / "scripts" / "build_questionnaire.py"),
                             str(j), "--check"], capture_output=True, text=True, cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)

@@ -21,20 +21,20 @@ jobs:
       - name: 样例确认单校验（依赖闭环/分支对称/建议措辞）
         run: |
           python3 scripts/build_questionnaire.py \
-            "examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json" \
+            "examples/demo-project/docs/requirements/questionnaires/2026-07-11-报销打款-r1.json" \
             --check
 
       - name: 样例确认单出包（单文件自包含）
         run: |
           python3 scripts/build_questionnaire.py \
-            "examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json" \
+            "examples/demo-project/docs/requirements/questionnaires/2026-07-11-报销打款-r1.json" \
             -o /tmp/confirm.html
           test -s /tmp/confirm.html
 
       - name: 证据核验（样例 spec 的引用真伪）
         run: |
           python3 scripts/verify_evidence.py \
-            "examples/demo-project/docs/requirements/specs/逾期提醒.md" \
+            "examples/demo-project/docs/requirements/specs/报销打款.md" \
             --root examples/demo-project
 
       - name: 回执机检（旧手写样本回归）

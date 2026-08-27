@@ -6,7 +6,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_questionnaire as bq
 
 EXAMPLE = (ROOT / "examples/demo-project/docs/requirements/questionnaires"
-                  "/2026-07-11-逾期提醒-r1.json")
+                  "/2026-07-11-报销打款-r1.json")
 
 
 class TestRenderMd(unittest.TestCase):
@@ -15,7 +15,7 @@ class TestRenderMd(unittest.TestCase):
         cls.md = bq.render_md(json.loads(EXAMPLE.read_text(encoding="utf-8")))
 
     def test_question_heading_matches_checker_contract(self):
-        self.assertIn("### 问题 1：「逾期」从哪天起算？", self.md)
+        self.assertIn("### 问题 1：「可打款」从哪个节点算起？", self.md)
 
     def test_heading_carries_decide_not_person(self):
         """给谁是开发的事，单子只标业务定/开发拟定。"""
@@ -30,7 +30,7 @@ class TestRenderMd(unittest.TestCase):
             self.assertNotIn(gone, self.md, f"期限残留: {gone}")
 
     def test_options_carry_letters_and_empty_boxes(self):
-        self.assertIn("☐ A. 到期日次日即逾期", self.md)
+        self.assertIn("☐ A. 审批通过即可打", self.md)
 
     def test_has_answer_slot_and_signoff(self):
         self.assertIn("【作答区】", self.md)
@@ -55,7 +55,7 @@ class TestRenderMd(unittest.TestCase):
         for blk in self.md.split("### 问题 ")[1:]:
             body = blk.split("【作答区】")[0]
             self.assertNotIn("子问", body, f"子问不该出现在勾选区：{blk[:40]}")
-        self.assertIn("　· 达到上限后还没还，怎么办（", self.md)
+        self.assertIn("　· 重试 3 次仍失败怎么办（", self.md)
 
     def test_filled_md_passes_checker_without_multiselect_warning(self):
         """把生成的 md 填一份丢给真实机检,不该出现『勾选了 N 项』。"""
@@ -106,8 +106,8 @@ class TestRenderMd(unittest.TestCase):
         blk = next(b for b in self.md.split("### 问题 ")[1:] if b.startswith("1："))
         self.assertIn("演示对照", blk)
         self.assertIn("非任何选项的背书", blk)
-        self.assertIn("逾期 4 天", blk)
-        self.assertIn("未逾期", blk)
+        self.assertIn("3-01 当天进批次", blk)
+        self.assertIn("3-03 复核完才进批次", blk)
         self.assertIn("未从代码验证", blk)      # basis=assumed 必须如实标注
 
     def test_no_advice_wording_smuggled_in_cost(self):
@@ -160,7 +160,7 @@ class TestBlankMdIsFullyReportedAsUnanswered(unittest.TestCase):
         md = bq.render_md(json.loads(EXAMPLE.read_text(encoding="utf-8")))
         blk = next(b for b in md.split("### 问题 ")[1:] if b.startswith("2："))
         head, _, tail = blk.partition("【作答区】")
-        self.assertIn("　· 达到上限后还没还，怎么办（", head)
+        self.assertIn("　· 重试 3 次仍失败怎么办（", head)
         self.assertNotIn("　·", tail)
 
 

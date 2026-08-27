@@ -101,7 +101,7 @@ The skill takes over: archives the raw material, runs the blind-spot checklist, 
 
 Interview-your-plan skills (grill-me, brainstorming, …) interrogate **you, the developer** — recommended answers speed you up, and wrong guesses are yours to own. This skill produces artifacts for a **third party who didn't write the prompt**:
 
-- **Never recommends an answer on policy/accounting questions** — a pre-checked default on "when does 'overdue' start?" is the developer deciding on the business's behalf, with their signature on it
+- **Never recommends an answer on policy/accounting questions** — a pre-checked default on "when does a claim become payable?" is the developer deciding on the business's behalf, with their signature on it
 - **Every question carries its evidence** (verbatim quote / code citation / openly marked "unsupported"), and unsupported questions get a falsification exit instead of forcing a choice among wrong options
 - **Every worked example is computed per branch** — the business compares 70.0% vs 63.6% vs 50.0%, not abstractions
 - **The receipt is a provenance record**: signed, dated, machine-checked, archived

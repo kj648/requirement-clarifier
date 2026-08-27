@@ -77,7 +77,7 @@ class TestChecker(unittest.TestCase):
         p = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "build_questionnaire.py"),
              str(ROOT / "examples/demo-project/docs/requirements/questionnaires"
-                        "/2026-07-11-逾期提醒-r1.json"),
+                        "/2026-07-11-报销打款-r1.json"),
              "--md", str(Path(tempfile.mkdtemp()) / "blank.md")],
             capture_output=True, text=True, cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)

@@ -32,13 +32,13 @@
 
 ```json
 {"kind": "code",
- "path": "app/reminder_rules.py", "line": 18,
- "snippet": "if bill.balance <= 0:",
- "logic": "代码现在按余额是否 ≤ 0 判定已还清，完全不看单子的状态字段",
- "entry": "app/reminder_rules.py:15",
+ "path": "app/payout_rules.py", "line": 18,
+ "snippet": "if bill.paid_amount >= bill.approved_amount:",
+ "logic": "代码现在发起打款成功就把金额计为已打，完全不等银行回单到账",
+ "entry": "app/payout_rules.py:15",
  "branches": [
-   {"cond": "余额 ≤ 0", "then": "不再提醒", "cite": "app/reminder_rules.py:19"},
-   {"cond": "余额 > 0 且已逾期", "then": "提醒，累计发满 3 次为止", "cite": "app/reminder_rules.py:20"}],
+   {"cond": "已打金额 ≥ 批准金额", "then": "不再发起", "cite": "app/payout_rules.py:19"},
+   {"cond": "可打款且未打满批准金额", "then": "发起打款，累计重试满 3 次为止", "cite": "app/payout_rules.py:20"}],
  "branches_exhaustive": true}
 ```
 
@@ -66,8 +66,8 @@
 
 ```
 源码 ──读懂──► rules/<模块名>.md（模板 templates/rules-template.md）
-                  R3. 已还清的判定：余额清零即视为已还清，不看状态字段
-                      > 证据: app/reminder_rules.py:18 | "if bill.balance <= 0:"
+                  R3. 打款完成的判定：发起成功即计入已打，不等银行回单到账
+                      > 证据: app/payout_rules.py:18 | "if bill.paid_amount >= bill.approved_amount:"
                       入口 / 分支 / 穷举声明 / 复核状态 / owner 勾选位
                   ▼
             题目引 R3，不直接引代码行；业务看到的就是这句业务语言

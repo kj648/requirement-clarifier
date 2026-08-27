@@ -1,0 +1,152 @@
+{
+  "doc": {
+    "id": "报销打款", "title": "报销打款", "round": 1,
+    "sent_by": "开发", "sent_on": "2026-07-11",
+    "usage": "您的答案会写进开发规格并落库存档，日后钱打错时按这份回执追溯——照实答，不确定的地方标出来比猜一个更有用。"
+  },
+  "part1": [
+    {"n": 1, "we_understand": "报销单审批通过后系统自动打款，不再靠财务翻表逐单人工发起。",
+     "note": "如有异议请说明"},
+    {"n": 2, "we_understand": "对公付款要双人复核、员工报销代发不用——本功能按员工报销代发走，不走双人复核。",
+     "note": "2026-06-20 已确认过的口径"}
+  ],
+  "layers": [
+    {"n": 1, "why": "可打款节点与部分驳回口径决定其余规则"},
+    {"n": 2}
+  ],
+  "questions": [
+    {
+      "no": 1, "layer": 1, "blocking": true,
+      "title": "「可打款」从哪个节点算起？",
+      "decide": "biz",
+      "background": "审批通过就能打款，还是要财务再复核一遍才能打？这决定打款的触发时点。",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "src",
+        "cites": [{"kind": "src",
+                   "path": "docs/requirements/raw/2026-07-10-李姐微信语音转述.md",
+                   "line": 4,
+                   "snippet": "报销单审完了就把钱打了呗"}],
+        "weak": null
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "审批通过即可打", "terminal": true},
+        {"key": "B", "label": "需财务复核后才可打"},
+        {"key": "dk", "kind": "dontknow", "label": "我不清楚", "terminal": true}
+      ]}],
+      "reveal": [{"when": "B", "ask": "复核最迟多久要完成"}],
+      "demo": {
+        "given": "一张报销单 2026-03-01 审批通过，财务 2026-03-03 才复核完（按 B 的复核环节算）",
+        "basis": "assumed",
+        "rows": [
+          {"when": ["A"], "k": "钱哪天发出", "v": "3-01 当天进批次，员工当天到账"},
+          {"when": ["B"], "k": "钱哪天发出", "v": "3-03 复核完才进批次，员工晚拿到两天"}
+        ]
+      }
+    },
+    {
+      "no": 2, "layer": 2,
+      "title": "打款批次怎么跑？",
+      "decide": "dev",
+      "background": "您说「别一天打好几遍」「过几天再跑一次」，需要落成具体规则才能开发。",
+      "advice_allowed": true,
+      "evidence": {
+        "tier": "src",
+        "cites": [
+          {"kind": "src", "path": "docs/requirements/raw/2026-07-10-李姐微信语音转述.md",
+           "line": 6, "snippet": "别一天打好几遍"},
+          {"kind": "src", "path": "docs/requirements/raw/2026-07-10-李姐微信语音转述.md",
+           "line": 7, "snippet": "过几天再跑一次"}
+        ]
+      },
+      "groups": [
+        {"id": "main", "options": [
+          {"key": "A", "label": "每天一批，失败自动重试、最多 3 次",
+           "cost": "重试上限明确，钱没到账时好定位是第几次重试挂的"},
+          {"key": "B", "label": "每周人工触发一批", "terminal": true}
+        ]},
+        {"id": "after_retry", "ask": "重试 3 次仍失败怎么办",
+         "inline": true, "tier": "guess",
+         "options": [
+           {"key": "manual", "label": "转人工跟进"},
+           {"key": "hold", "label": "挂起，等下一批再试"}
+         ]}
+      ],
+      "reveal": [{"when": "A", "ask": "重试间隔多久"}]
+    },
+    {
+      "no": 4, "layer": 1,
+      "title": "「打款完成」按什么判？",
+      "decide": "biz",
+      "background": "代码现在发起打款成功就把单子计为已打。如果银行回单退回（账号错、户名不符），单子已经算打完了，钱其实没到员工账上。",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "code",
+        "rules_ref": [{
+          "id": "R3",
+          "doc": "docs/requirements/rules/payout.md",
+          "text": "打款完成的判定：发起成功即计入已打，不等银行回单到账"
+        }],
+        "reviewed": {
+          "by": "独立盲审", "on": "2026-07-11", "diffs": 1,
+          "note": "复核方独立读代码时列出了「单子还不可打款」这条分支——它是 is_payable() 的短路返回，原稿只写了金额与重试两条，已补入 R3"
+        },
+        "cites": [{
+          "kind": "code",
+          "path": "app/payout_rules.py", "line": 18,
+          "snippet": "if bill.paid_amount >= bill.approved_amount:",
+          "entry": "app/payout_rules.py:15",
+          "branches": [
+            {"cond": "单子还不可打款", "then": "不发起", "cite": "app/payout_rules.py:17"},
+            {"cond": "已打金额 ≥ 批准金额", "then": "不再发起", "cite": "app/payout_rules.py:19"},
+            {"cond": "可打款且未打满批准金额", "then": "发起打款，累计重试满 3 次为止", "cite": "app/payout_rules.py:20"}
+          ],
+          "branches_exhaustive": true
+        }]
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "按发起成功即标完成（与现在代码一致，不用改）", "terminal": true},
+        {"key": "B", "label": "等银行回单到账才标完成（退回的单子回到待打款）", "terminal": true}
+      ]}],
+      "demo": {
+        "given": "一张单子批准 600 元，打款已发起成功，银行次日以「户名不符」退回",
+        "basis": "branches",
+        "rows": [
+          {"when": ["A"], "k": "系统行为", "v": "单子仍算已打完，不再发起"},
+          {"when": ["B"], "k": "系统行为", "v": "单子回到待打款，进下一批重试"}
+        ]
+      }
+    },
+    {
+      "no": 3, "layer": 1, "blocking": true,
+      "title": "报销单被部分驳回（只批了一部分金额），还自动打吗？",
+      "decide": "biz",
+      "background": "只批了一部分金额，是按批准金额照打还是转人工确认。",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "guess", "cites": [],
+        "weak": "整题无据：部分驳回这个场景李姐没提过，是开发从盲区清单（金额与账务口径）推出来的。如果业务上不存在部分驳回，请直接判本题不成立。"
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "按批准金额照打", "terminal": true},
+        {"key": "B", "label": "暂停，转人工确认", "terminal": true}
+      ]}],
+      "demo": {
+        "given": "一张报销单申请 1000 元，审批只批了 600 元、驳回 400 元",
+        "basis": "assumed",
+        "rows": [
+          {"when": ["A"], "k": "系统行为", "v": "按 600 元照常进批次打出"},
+          {"when": ["B"], "k": "系统行为", "v": "不自动打款，挂到人工队列等确认"}
+        ]
+      }
+    }
+  ],
+  "links": {
+    "na": [{"when": "2=B", "target": "2.after_retry",
+            "note": "因问题 2 选了 B：每周人工触发一批，本来就没有自动重试"}],
+    "carry": [],
+    "clash": [{"when": "3=B & 2=A",
+               "why": "问题 2 选 A 是「每天自动捞一批单子打出去」，问题 3 选 B 是「部分驳回的单子要人工确认」——自动批次的捞单条件会不会把挂在人工队列上的单子也捞进去打掉？谁来把它们排除掉？",
+               "require_explain": true}]
+  }
+}

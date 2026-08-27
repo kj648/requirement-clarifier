@@ -6,7 +6,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_questionnaire as bq
 
 EXAMPLE = (ROOT / "examples/demo-project/docs/requirements/questionnaires"
-                  "/2026-07-11-逾期提醒-r1.json")
+                  "/2026-07-11-报销打款-r1.json")
 
 
 class TestExample(unittest.TestCase):
@@ -32,7 +32,7 @@ class TestExample(unittest.TestCase):
             self.assertTrue(links.get(kind), f"样例应演示 links.{kind}")
 
     def test_rule_questions_forbid_advice(self):
-        # 「逾期从哪天起算」是账务口径题,不得允许建议
+        # 「『可打款』从哪个节点算起」是账务口径题,不得允许建议
         q1 = next(q for q in self.doc["questions"] if q["no"] == 1)
         self.assertFalse(q1["advice_allowed"])
 
