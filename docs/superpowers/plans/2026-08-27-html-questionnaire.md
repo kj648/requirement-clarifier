@@ -256,8 +256,11 @@ class TestValidate(unittest.TestCase):
         self.assertTrue(any("note" in e for e in errs), errs)
 
     def test_reviewed_is_optional(self):
-        """没审也能出包 —— 页面如实标『未经独立复核』，不拦。"""
-        self.assertEqual(bq.validate(doc()), [])
+        """没审也能出包 —— 页面如实标『未经独立复核』，不拦在 build。"""
+        d = doc()
+        d["questions"][0]["evidence"].pop("reviewed", None)
+        errs = bq.validate(d)
+        self.assertFalse([e for e in errs if "reviewed" in e], errs)
 
     def test_reveal_when_must_be_own_option_key(self):
         d = doc()
@@ -839,7 +842,17 @@ Create `templates/rules-template.md`：
 > 代码依据取自 <code_rev>（源码逆向时填；这之后代码若变动，条目需重新确认）
 
 每条请 owner 勾一个：☐ 有效　☐ 已废弃　☐ 需修改（写明怎么改）
-**未勾选的按【假设】处理，不得作为开发依据。**
+
+**这里有两条不同的轴，别压成一条：**
+
+| 轴 | 问的是 | 谁判 | 机器能查吗 |
+|---|---|---|---|
+| 下面每条的 `> 证据:` 坐标 | 代码/表格**确实是这么写的** | 坐标说话 | 能（grep） |
+| owner 勾选 | 这条规则**该不该继续有效** | 业务裁决 | 不能 |
+
+一条规则可以「代码确实这么写」**同时**被 owner 判「已废弃」——这正是逆向老系统最常见的
+情形。所以：**未勾选时，不得把这条规则当作「业务已认可的规则」写进 spec**（按【假设】入账）；
+但它作为「现状是什么」的陈述仍然成立、仍然可核验，确认单里照样可以引它来问业务。
 
 ## R1. <一句业务语言的规则——业务能看懂，不出现表结构/字段名/接口>
 
@@ -882,7 +895,7 @@ Create `examples/demo-project/docs/requirements/rules/reminder.md`：
 
 ## R3. 已还清的判定：余额清零即视为已还清，不看单子的状态字段
 
-☐ 有效　☐ 已废弃　☐ 需修改：______
+☑ 有效　☐ 已废弃　☐ 需修改：______（王芳 2026-07-11 电话确认）
 
 > 证据: app/reminder_rules.py:18 | "if bill.balance <= 0:"
 
@@ -895,7 +908,13 @@ Create `examples/demo-project/docs/requirements/rules/reminder.md`：
 - 独立复核：☐ 未复核　☑ 已盲审（日期 2026-07-11 / 差异 1 处 / 处置：复核方独立读代码时列出了"还没到逾期"这条分支，原稿只写了余额和逾期两条，已补入）
 ```
 
-条目编号跳过 R2 是故意的——真实逆向里条目会增删，编号不该被要求连续，`validate_refs` 只按 id 查找。
+两处刻意的细节：
+
+- **条目编号跳过 R2**——真实逆向里条目会增删，编号不该被要求连续，`validate_refs` 只按 id 查找。
+- **R1 的 owner 勾选留空、R3 勾了「有效」**——演示两条轴的区别。R1 的 `> 证据:` 坐标一样
+  可核验（代码确实这么写），但 owner 还没裁决它该不该继续有效，所以它不得作为「业务已认可
+  的规则」写进 spec；R3 王芳验真过，问题 4 才引它。**`evidence.tier` 与 owner 勾选是两条
+  独立的轴**，前者说来源可不可核验，后者说规则该不该有效。
 
 - [ ] **Step 5: 写样例 json**
 
@@ -2068,10 +2087,9 @@ class TestChecker(unittest.TestCase):
 
     def test_denied_question_counted_separately(self):
         code, out = run("receipt-denied.md")
-        self.assertIn("不成立", out)
         self.assertIn("判为不成立 1 道", out)
-        self.assertNotIn("问题 2『重复提醒的频率和上限？", out.split("== 摘要 ==")[0]
-                         .replace("不成立", ""))   # 不该同时报未作答
+        self.assertIn("未答 0 道", out)          # 证伪的题不该同时算漏答
+        self.assertIn("需删除或重出", out)
 
     def test_unexplained_clash_fails(self):
         code, out = run("receipt-clash-unexplained.md")
