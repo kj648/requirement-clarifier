@@ -2506,6 +2506,408 @@ git commit -m "docs: 阶段二出题纪律接入 HTML 确认单，v2.6.0
 
 ---
 
+### Task 8: 角色模型简化（先做——Task 4 依赖它）
+
+真实用法是开发或产品拿着单子自己去找人确认，**给谁是开发的事，不是单子的机制**。按人分区解决了一个不存在的问题。本任务把它拆掉，换成「开发／业务」两档，并删掉单子上的期限。
+
+**Files:**
+- Modify: `scripts/build_questionnaire.py`（`validate` 的角色校验换成 `decide` enum；删 `roles` 相关；`_check_carry_refs` 等不动）
+- Modify: `templates/questionnaire.schema.json`
+- Modify: `templates/questionnaire.html`（拆身份分区，换硬活筛选；抬头去期限）
+- Modify: `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json`
+- Modify: `SKILL.md`（删「业务沉默协议」整节，两句并进铁律 4 与落款检查）
+- Test: `tests/test_build_questionnaire.py`、`tests/test_example_questionnaire.py`、`tests/test_render_html.py`
+
+**Interfaces:**
+- Consumes: Task 1/2/3 的全部产物
+- Produces: `decide` 字段契约（`"biz"` | `"dev"`）；模板侧 `DECIDE_LABEL` 与 `refreshDecideFilter()`
+
+- [ ] **Step 1: 写失败测试**
+
+在 `tests/test_build_questionnaire.py` 的 `doc()` 里，把每道题的 `"who": ["fin"]` 换成 `"decide": "biz"`（问题 2 换 `"dev"`），删掉顶层 `"roles"`，并删掉 `doc` 里的 `due_days`。然后把 `test_who_must_reference_declared_role` 整个替换为：
+
+```python
+    def test_decide_must_be_biz_or_dev(self):
+        """角色只有开发与业务两档 —— 给谁是开发的事，不写进单子。"""
+        for bad in ("fin", "财务", "BIZ", "", None):
+            d = doc()
+            d["questions"][0]["decide"] = bad
+            errs = bq.validate(d)
+            self.assertTrue(any("decide" in e for e in errs), f"{bad!r}: {errs}")
+
+    def test_decide_both_values_pass(self):
+        for good in ("biz", "dev"):
+            d = doc()
+            d["questions"][0]["decide"] = good
+            self.assertEqual(bq.validate(d), [])
+
+    def test_roles_key_is_rejected_as_leftover(self):
+        """顶层 roles 已废弃 —— 留着会让人以为还能按人分区。"""
+        d = doc()
+        d["roles"] = [{"id": "fin", "name": "财务"}]
+        errs = bq.validate(d)
+        self.assertTrue(any("roles" in e and "废弃" in e for e in errs), errs)
+
+    def test_due_days_is_rejected_as_leftover(self):
+        d = doc()
+        d["doc"]["due_days"] = 3
+        errs = bq.validate(d)
+        self.assertTrue(any("due_days" in e for e in errs), errs)
+
+    def test_blocking_question_must_be_decided_by_business(self):
+        """阻塞级不许用【开发拟定】顶过去 —— 只能推迟或升级。"""
+        d = doc()
+        d["questions"][0]["blocking"] = True
+        d["questions"][0]["decide"] = "dev"
+        errs = bq.validate(d)
+        self.assertTrue(any("阻塞" in e for e in errs), errs)
+```
+
+在 `tests/test_render_html.py` 加：
+
+```python
+    def test_no_identity_partition_left(self):
+        """身份分区已撤销 —— 残留的选择器会让人以为还能按人筛。"""
+        for gone in ("whoRow", "offrole", "peekhint", "ownsRole", "rc-role", "填写身份"):
+            self.assertNotIn(gone, self.tpl, f"身份分区残留: {gone}")
+
+    def test_decide_filter_present(self):
+        for kw in ("必须业务定", "只需过目", "业务定", "开发拟定 · 请过目"):
+            self.assertIn(kw, self.tpl, f"缺硬活筛选文案: {kw}")
+
+    def test_no_deadline_in_template(self):
+        for gone in ("回填期限", "due_days", "个工作日"):
+            self.assertNotIn(gone, self.tpl, f"期限残留: {gone}")
+```
+
+在 `tests/test_example_questionnaire.py` 里把 `test_rule_questions_forbid_advice` 之外涉及 `roles`/`who` 的断言改为 `decide`，并加：
+
+```python
+    def test_example_has_no_roles_or_due_days(self):
+        self.assertNotIn("roles", self.doc)
+        self.assertNotIn("due_days", self.doc["doc"])
+
+    def test_example_exercises_both_decide_values(self):
+        vals = {q["decide"] for q in self.doc["questions"]}
+        self.assertEqual(vals, {"biz", "dev"}, "样例应同时演示两档")
+```
+
+- [ ] **Step 2: 运行测试，确认失败**
+
+Run: `python3 -m unittest discover -s tests -p 'test_*.py' -v`
+Expected: FAIL —— `decide`／`roles`／`due_days`／身份分区相关的新测试全红
+
+- [ ] **Step 3: 改校验器**
+
+`scripts/build_questionnaire.py`：
+
+- 顶部加 `DECIDE = ("biz", "dev")`
+- `validate()` 里删掉 `role_ids` 与 who 校验，换成：
+
+```python
+    if "roles" in doc:
+        errs.append("顶层 `roles` 已废弃 —— 角色只有开发与业务两档,由每题的 decide 声明;"
+                    "留着 roles 会让人以为还能按人分区(给谁是开发的事,不写进单子)")
+    if "due_days" in (doc.get("doc") or {}):
+        errs.append("`doc.due_days` 已废弃 —— 单子上不写回填期限;"
+                    "期限与催办是人找人的事,skill 观察不到也不该教")
+```
+
+- 逐题校验里，把 who 那段换成：
+
+```python
+        if q.get("decide") not in DECIDE:
+            errs.append(f"{tag}: decide 必须是 {'/'.join(DECIDE)},实际「{q.get('decide')}」"
+                        f" —— biz=业务定(记【业务确认】),dev=开发拟定请业务过目(记【开发拟定】)")
+        elif q.get("blocking") and q.get("decide") == "dev":
+            errs.append(f"{tag}: 阻塞级的题不许标 decide=dev —— 【开发拟定】不得顶过阻塞级岔口,"
+                        f"只能推迟开发或向拍板人升级")
+```
+
+- `--check` 的通过提示里把「N 个角色」换成按 decide 分档的计数。
+
+`templates/questionnaire.schema.json`：`doc` 的 `required` 去掉与期限相关项、`properties` 删 `due_days`；顶层删 `roles`；`questions[].required` 里 `who` 换 `decide`，并加 `"decide": {"enum": ["biz", "dev"]}` 与说明。
+
+- [ ] **Step 4: 改模板**
+
+`templates/questionnaire.html`：
+
+**4a. 抬头去期限。** `renderMasthead()` 里骑缝框那行
+
+```javascript
+      <span class="due">回填期限<br>${d.due_days ?? 3} 个工作日</span></div>`;
+```
+
+换成（骑缝框保留单据 id 与轮次，补上题量）：
+
+```javascript
+      <span class="due">共 ${DATA.questions.length} 题</span></div>`;
+```
+
+**4b. 题头标签换语义。** 顶部加常量，`questionHtml()` 里 `who` 相关全部替换：
+
+```javascript
+const DECIDE_LABEL = {
+  biz: ['业务定', 'biz'],
+  dev: ['开发拟定 · 请过目', 'dev'],
+};
+```
+
+题头 tags 由 `<span class="tag who">建议由 … 回答</span>` 改为
+`<span class="tag d-${cls}">${label}</span>`，并去掉 `data-who` 属性、改为 `data-decide="${q.decide}"`。
+
+**4c. 拆掉身份分区，换硬活筛选。** 删掉 `ROLES`／`myRole`／`ownsRole()`／`buildWhoRow()`／`refreshRoles()`／那个 `document.addEventListener('click', …)` 的 peek 展开、以及 `localStorage` 的 `rc-role`；`refreshAll()` 里去掉 `refreshRoles(); buildWhoRow();`。换成：
+
+```javascript
+/* 硬活筛选：业务想先看哪些必须自己定。只改显隐，不改归属——没有"我是谁"，也不折叠任何题。 */
+let decideFilter = '';   // '' | 'biz' | 'dev'
+function buildDecideRow(){
+  const row = document.getElementById('whoRow');
+  const count = v => QS.filter(q => !v || q.dataset.decide === v);
+  const cell = (v, label) => {
+    const mine = count(v), done = mine.filter(answered).length;
+    return `<button type="button" class="whochip${decideFilter === v ? ' on' : ''}"`
+         + ` data-decide="${v}">${label}<span class="c">${done}/${mine.length}</span></button>`;
+  };
+  row.innerHTML = '<span class="lb">先看</span>'
+    + cell('', '全部') + cell('biz', '必须业务定') + cell('dev', '只需过目');
+  row.querySelectorAll('.whochip').forEach(b => b.onclick = () => {
+    decideFilter = b.dataset.decide; refreshAll();
+  });
+}
+function refreshDecideFilter(){
+  QS.forEach(q => q.hidden = !!decideFilter && q.dataset.decide !== decideFilter);
+  rail.querySelectorAll('a').forEach(a => {
+    const q = document.getElementById(a.dataset.q);
+    a.classList.toggle('dim', !!q && q.hidden);
+  });
+}
+```
+
+`refreshAll()` 末尾改为 `refreshDecideFilter(); buildDecideRow();`。
+
+**4d. CSS。** 删 `.q.offrole`／`.q.offrole:not(.peek) .q-bd`／`.q.offrole .q-hd`／`.peekhint`／`.q.peek`；`.tag.who` 换成两条：
+
+```css
+.tag.d-biz{border-color:#C8D2DE;color:#1F3A5F;background:#EEF3F8}
+.tag.d-dev{border-color:#D3DBCE;color:#4A585F;background:#F4F7F1}
+```
+
+**4e. 回执按 decide 分段小计。** `buildReceipt()` 的成色行后面加一行：
+
+```javascript
+  const byDecide = v => QS.filter(q => q.dataset.decide === v);
+  const bizQ = byDecide('biz'), devQ = byDecide('dev');
+  L.push(`> 分档：业务定 ${bizQ.length} 题（已答 ${bizQ.filter(answered).length}）`
+       + ` · 开发拟定 ${devQ.length} 题（已过目 ${devQ.filter(answered).length}）`);
+```
+
+并删掉 `J.落款` 里的 `填写身份` 与那句 `L.push('填写身份：…')`；题块标题里 `（建议由 ${DATA...} 回答）` 换成 `（${q.decide === 'biz' ? '业务定' : '开发拟定·请过目'}）`。
+
+- [ ] **Step 5: 改样例**
+
+`examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json`：删顶层 `roles`、删 `doc.due_days`；四道题的 `"who": [...]` 换成 `decide`——问题 1、3、4 是 `"biz"`（起算日、部分还款、已还清判定都是账务口径，业务必须定），问题 2 是 `"dev"`（提醒频率开发已给默认「每 3 天最多 3 次」，请业务过目）。问题 2 原本 `advice_allowed: true` 正好对应 `dev` 档，不用改。
+
+- [ ] **Step 6: 改 SKILL.md**
+
+删掉整段「**业务沉默协议：**…」（第 94 行），把两句承重内容并入：
+
+在铁律 4 的 **【开发拟定】** 那条末尾追加：
+
+```
+**业务没回话不等于无异议**——开发拟的默认规则可以先按【开发拟定】往下做，但标签**只因落款转正，不因时间转正**；没落款就永远是【开发拟定】。
+```
+
+在「**落款检查：**」那段末尾追加：
+
+```
+**阻塞级的题不许用【开发拟定】顶过去**，只能推迟开发或向拍板人升级。
+```
+
+并把阶段二第 3 步与确认单要求里「每题标建议回答人」「建议由 XX 回答，不归您管请转交」「警惕替答」相关文字，改为按 `decide: biz|dev` 标档，并写明：**给谁是开发的责任**，出题前自己确认知情人是谁、再决定这份单子发给谁；单子里不体现具体收件人。
+
+- [ ] **Step 7: 跑测试并出包核对**
+
+Run:
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+python3 scripts/build_questionnaire.py \
+  "examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json" \
+  --root examples/demo-project -o /tmp/rv8.html
+grep -c "回填期限\|whoRow\|offrole\|填写身份" /tmp/rv8.html
+```
+Expected: 测试全绿；最后一条 grep 计数为 0（`whoRow` 作为容器 id 仍在 HTML 骨架里，故只对产物里的**残留文案**计数——若 `whoRow` 命中 1 次属正常，其余三个必须为 0）
+
+- [ ] **Step 8: 提交**
+
+```bash
+git add scripts/build_questionnaire.py templates/questionnaire.schema.json \
+        templates/questionnaire.html SKILL.md \
+        examples/demo-project/docs/requirements/questionnaires/ tests/
+git commit -m "feat: 角色收成开发/业务两档，去掉单子上的期限
+
+真实用法是开发或产品拿着单子自己去找人确认——给谁是开发的事，不是单子的
+机制。按人分区解决了一个不存在的问题，还带来『角色是自由文本』那类麻烦
+（此前评审纠结的『财务 与 财务 AR 负责人 算成两个人』由此连根拔除）。
+
+- roles 顶层声明删除；每题改标 decide: biz|dev。biz=业务必须自己定（答案记
+  【业务确认】），dev=开发已拟默认规则请业务过目（记【开发拟定】）
+- 阻塞级不许标 dev —— 【开发拟定】不得顶过阻塞级岔口，出包时红字
+- 身份分区（whoRow/offrole/peek/填写身份）整体拆除，换成硬活筛选
+  『全部 / 必须业务定 / 只需过目』，只改显隐、不折叠任何题
+- 单子上不写回填期限；SKILL.md 删除『业务沉默协议』整节与『超时临时生效』
+  第四档标签，标签体系回到干净的三档。协议里真正承重的两句并入铁律 4
+  （业务没回话不等于无异议，标签只因落款转正、不因时间转正）与落款检查
+  （阻塞级不许用【开发拟定】顶过去）"
+```
+
+---
+
+### Task 9: UI 方案落到模板（最后做）
+
+方案见已发布的画板（`.superpowers/design/` 下的 `Main/Tokens/States/Receipt/Print.dc.html` 是其working 源）。本任务只改样式与打印，不动功能。
+
+**Files:**
+- Modify: `templates/questionnaire.html`（`:root` token 化 + 四处刻意改动 + 打印规格）
+- Test: `tests/test_render_html.py`
+
+**Interfaces:**
+- Consumes: Task 8 之后的模板
+- Produces: 命名 CSS custom properties，与方案一一对照
+
+- [ ] **Step 1: 写失败测试**
+
+```python
+    def test_type_scale_is_tokenised(self):
+        """字号必须走 7 级字阶 token，不许再散落字面值。"""
+        for tok in ("--t-title", "--t-h2", "--t-q", "--t-body",
+                    "--t-sub", "--t-cap", "--t-label"):
+            self.assertIn(tok, self.tpl, f"缺字阶 token: {tok}")
+
+    def test_space_scale_is_tokenised(self):
+        for tok in ("--s-1", "--s-2", "--s-3", "--s-4", "--s-6", "--s-8"):
+            self.assertIn(tok, self.tpl, f"缺间距 token: {tok}")
+
+    def test_na_group_no_longer_uses_overlay(self):
+        """自动不适用改写形态，不再用 93% 遮罩压住正文。"""
+        self.assertNotIn("rgba(244,247,241,.93)", self.tpl)
+        self.assertIn(".grp.na .na-note", self.tpl)
+
+    def test_print_bumps_body_to_12pt(self):
+        """15px 在纸上只有 11.25pt，低于印刷正文下限。"""
+        m = re.search(r"@media print\{(.*?)\n\}", self.tpl, re.S)
+        self.assertIsNotNone(m)
+        self.assertIn("16px", m.group(1))
+
+    def test_print_avoids_breaking_questions(self):
+        m = re.search(r"@media print\{(.*?)\n\}", self.tpl, re.S)
+        self.assertIn("break-inside:avoid", m.group(1).replace(" ", ""))
+```
+
+- [ ] **Step 2: 运行测试，确认失败**
+
+Run: `python3 -m unittest tests.test_render_html -v`
+Expected: FAIL —— 五条新测试全红
+
+- [ ] **Step 3: token 化 `:root`**
+
+在现有 `:root` 的颜色 token 之后追加字阶与间距，并把模板里散落的字号／内外边距逐处换成 `var(--t-*)` / `var(--s-*)`。对照表见方案画板 01：
+
+```css
+  /* 字阶：7 级，比率 1.18–1.30。原来是 12 个互不成比的字号 */
+  --t-title:28px; --t-h2:21px; --t-q:17px; --t-body:15px;
+  --t-sub:13.5px; --t-cap:12.5px; --t-label:11px;
+  /* 间距：6 级。原来是 14 个散值 */
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-6:24px; --s-8:32px;
+```
+
+`h1` 的 `clamp(22px,3.4vw,32px)` 改为 `var(--t-title)`——单据标题不需要随视口伸缩。
+
+- [ ] **Step 4: 四处刻意改动**
+
+**4a. amber 升为正式角色。** `.unreviewed` 已用 amber；再把「演示数字基于开发假设」（`.demo-assumed`）从红改 amber、「核对未表态」的计数在 `statusText` 里用 amber。红只留给拦人（阻塞／无据／矛盾／未署名）。
+
+**4b. 正文行宽。** 给 `.bg`、`.logic`、`.clash`、`.guess-w`、`.why2`、`.ev-weak` 加 `max-width:62ch`——中文一行 50 多字会跳行。
+
+**4c. 自动不适用不再遮罩。** 删掉 `.grp.na::after` 整条与 `.grp.na{position:relative;opacity:.45}`，换成：
+
+```css
+.grp.na>.grp-q{color:var(--ink-45);text-decoration:line-through}
+.grp.na>.opts,.grp.na>.demo{display:none}
+.grp.na .na-note{padding:var(--s-2) var(--s-3);background:var(--sheet-2);
+  border:1px dashed var(--ink-45);font-size:var(--t-cap);color:var(--ink-70);line-height:1.7}
+```
+
+并在 `refreshNA()` 里，为 `.na` 的组插入（或更新）一个真实的 `.na-note` 元素，内容为 `<b>本小问不适用</b>——${note}。回执里会写成这句推导，不算漏答。`——不再靠 `content:attr()`。
+
+**4d. 落款搬回 `<main>` 内。** Step 3a 的骨架把 `<section class="signoff">` 放在 `.body` 之外，导致落款整页通栏、伸到左侧索引底下。移进 `<main>`，与题目同宽——单据的落款必须与正文对齐。
+
+- [ ] **Step 5: 打印规格**
+
+`@media print` 整段替换为：
+
+```css
+@media print{
+  @page{margin:15mm}
+  body{background:#fff;background-image:none;font-size:16px;color:#000}
+  .statusbar,.dock,.rail,.howto,.deny,.ev summary::after{display:none!important}
+  .body{grid-template-columns:1fr;gap:0}
+  .q,.masthead,.signoff,.ledger tr,.demo{break-inside:avoid}
+  .cond,.ev,.ev-b,.coords{display:block!important}
+  .seal{border-color:#000;color:#000}
+  .tag.first,.badge.guess{border:1.5px solid #000;color:#000;background:#fff;font-weight:700}
+  .badge.guess{background:#000;color:#fff}
+  .demo td.v,.ledger td.n{border-left-color:#000;border-right-color:#000}
+  .clash,.guess-w,.ev-weak{border-color:#000;background:#fff}
+  textarea,input[type=text]{border-color:#000;background:
+    repeating-linear-gradient(#fff 0 27px,#ccc 27px 28px)}
+}
+```
+
+要点：正文上调到 16px（=12pt，印刷正文下限；屏幕的 15px 在纸上只有 11.25pt）；条件块与依据区强制展开（纸上没法点开，藏起来等于没给）；颜色退化为线宽与反白（红在单色打印机上印成灰、浅底色吃墨）；作答区给手写横线而不是空白框。
+
+- [ ] **Step 6: 跑测试并出包，人工过浏览器与打印预览**
+
+Run:
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+python3 scripts/build_questionnaire.py \
+  "examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json" \
+  --root examples/demo-project -o /tmp/rv9.html
+```
+
+人工验收（CI 覆盖不到，交控制方在浏览器里做）：
+- [ ] 与方案画板「全页版式」对照：抬头、骑缝、吸顶条、两栏、题卡、落款在右栏内
+- [ ] 无据题依据区红底默认展开；代码档外层只显示业务语言、坐标折叠在内
+- [ ] 自动不适用：标题带删除线、选项整组消失、推导链是真实元素（不是遮罩）
+- [ ] 矛盾红框、兜底出口、硬活筛选三钮
+- [ ] 人读回执弹窗：成色卡片、署名条、逐题清单、原始 md 折叠在最底
+- [ ] ⌘P 打印预览：正文明显变大、进度条／索引／底部条消失、条件块与依据区展开、题卡不跨页断开、作答区是横线
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add templates/questionnaire.html tests/test_render_html.py
+git commit -m "style: 落实 UI 方案 —— 字阶/间距 token 化、amber 升为角色、去遮罩、打印规格
+
+方案（已发布画板，working 源在 .superpowers/design/）基于现有 CSS 真实值，
+四处是刻意改动：
+
+- 字号从 12 个互不成比的散值收成 7 级字阶；间距从 14 个散值收成 6 级；
+  h1 的 clamp 改定值 —— 单据标题不需要随视口伸缩
+- amber 从『只在一处高亮』升为正式角色『成立但没验过』，把『有据』与
+  『已核实』在视觉上分开；红只留给拦人
+- 自动不适用不再用 93% 遮罩压住正文（文字叠糊、还挡住『原本问什么』），
+  改为标题加删除线 + 选项整组移除 + 推导链作为真实元素
+- 落款搬回 <main> 内与题目同宽 —— 单据落款必须与正文对齐
+- 打印从『藏掉 chrome』改为真印刷规格：正文上调到 16px（15px 在纸上只有
+  11.25pt，低于下限）、条件块与依据区强制展开、颜色退化为线宽与反白、
+  题卡 break-inside:avoid、作答区给手写横线
+- 正文加 62ch 行宽约束 —— 中文一行 50 多字会跳行"
+```
+
+---
+
 ## 已知限制（P0 不做，写进 spec §11 的缺口表）
 
 - **表格题**：原型里 AR 的"阻塞原因×责任部门"可编辑表格是项目专有题型，P0 的 schema 只支持单选／多选／文本。需要时另加 `groups[].kind: "table"`。
