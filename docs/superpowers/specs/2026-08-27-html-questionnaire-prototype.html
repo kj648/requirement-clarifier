@@ -368,6 +368,8 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
 .q.denied{border-left:3px solid var(--red);opacity:.92}
 .q.denied .q-bd .grp,.q.denied .demo{opacity:.4}
 .opt.none{border-style:dashed}
+.opt.other{border-style:dashed;color:var(--ink-70)}
+.opt.other:has(input:checked){color:var(--ink);border-style:solid}
 
 .why2{font-size:12.5px;color:var(--ink-70);margin:0 0 16px}
 .sign-grid{grid-template-columns:1fr 1fr 1fr}
@@ -1287,6 +1289,7 @@ function renderPreview(){
     const main=q.querySelector('[data-grp="main"] input:checked');
     let cl='', ans;
     if(off){ cl='no'; ans='本题不成立：'+(txt('deny-'+no)||'（没写原因）'); }
+    else if(main && main.value==='other'){ ans='都不是，实际是：'+(txt('other-'+no)||'（还没写实际口径）'); }
     else if(main){ ans=(/^[A-Z]$/.test(main.value)?main.value+'. ':'')+main.dataset.label; }
     else { cl='gap'; ans='还没答'+(q.dataset.first?'（这题定了其他 8 个指标才能算）':''); }
     const subs=[];
@@ -1320,6 +1323,22 @@ async function copyReceipt(btn){
   catch(e){ const r=document.createRange(); r.selectNodeContents(document.getElementById('receipt'));
     getSelection().removeAllRanges(); getSelection().addRange(r); btn.textContent='已选中，请按 ⌘C'; }
 }
+
+/* 兜底出口：一次性发单、业务异步回填，中间没有 AI —— 选项集猜错了业务当场没法跟 AI 说，
+   所以每题都必须留一条「都不是」的路，而不是逼人在错的选项里勉强挑一个。 */
+QS.forEach(q=>{
+  const no=q.dataset.no, main=q.querySelector('[data-grp="main"]');
+  if(!main) return;
+  const name=main.querySelector('input').name;
+  main.querySelector('.opts').insertAdjacentHTML('beforeend',
+    `<label class="opt other"><input type="radio" name="${name}" value="other"`
+   + ` data-label="都不是（实际口径见作答区）"><span class="mk"></span>`
+   + `<span>⊕ 都不是——我要选的不在这几个里</span></label>`);
+  main.insertAdjacentHTML('afterend',
+    `<div class="cond" data-when="${name}=other">`
+   + `<div class="cond-hd" data-ask="实际的口径是">那实际是怎样？照实写，别在上面几个里勉强挑一个</div>`
+   + `<div class="fld"><input type="text" id="other-${no}" placeholder="实际的口径／做法"></div></div>`);
+});
 
 try{ document.getElementById('s-name').value = localStorage.getItem('rc-filler')||''; }catch(e){}
 refreshAll();
