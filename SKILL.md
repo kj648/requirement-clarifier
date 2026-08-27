@@ -76,7 +76,7 @@ parking.md              # 需求停车场（暂不立项、待业务排优先级
    ```
 
    出题规则**必读** `references/questioning-rules.md`（问之前先自查事实、三档依据、
-   分支穷举、layer+links 声明依赖、建议选项分级、演示数字、角色 id、台阶）。字段契约见
+   分支穷举、layer+links 声明依赖、建议选项分级、演示数字、decide 标档、台阶）。字段契约见
    `templates/questionnaire.schema.json`。**校验不过不出包**——依赖悬空、分支不对称、
    规则题带建议措辞都会被拒。
 

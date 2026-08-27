@@ -117,6 +117,12 @@ def validate(doc):
     if "roles" in doc:
         errs.append("顶层 `roles` 已废弃 —— 角色只有开发与业务两档,由每题的 decide 声明;"
                     "留着 roles 会让人以为还能按人分区(给谁是开发的事,不写进单子)")
+    stale_who = [q.get("no") for q in doc.get("questions") or []
+                 if isinstance(q, dict) and "who" in q]
+    if stale_who:
+        errs.append(f"问题 {'、'.join(str(n) for n in stale_who)} 还带着 `who` 字段 —— 已废弃,"
+                    f"改标 decide: biz|dev。留着 who 会让人以为单子还会显示具体回答人,"
+                    f"而它其实被静默忽略:标的人无声消失,写的人不会知道")
     if "due_days" in (doc.get("doc") or {}):
         errs.append("`doc.due_days` 已废弃 —— 单子上不写回填期限;"
                     "期限与催办是人找人的事,skill 观察不到也不该教")

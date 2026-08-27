@@ -66,6 +66,21 @@ class TestValidate(unittest.TestCase):
         errs = bq.validate(d)
         self.assertTrue(any("roles" in e and "废弃" in e for e in errs), errs)
 
+    def test_stale_who_field_is_rejected(self):
+        """who 已废弃 —— 静默忽略会让标的回答人无声消失,写的人不会知道。"""
+        d = doc()
+        d["questions"][0]["who"] = ["fin"]
+        errs = bq.validate(d)
+        self.assertTrue(any("who" in e for e in errs), errs)
+
+    def test_stale_who_error_names_the_questions(self):
+        d = doc()
+        d["questions"][0]["who"] = ["fin"]
+        d["questions"][1]["who"] = ["ops"]
+        errs = [e for e in bq.validate(d) if "who" in e]
+        self.assertTrue(errs)
+        self.assertIn("1", errs[0]); self.assertIn("2", errs[0])
+
     def test_due_days_is_rejected_as_leftover(self):
         d = doc()
         d["doc"]["due_days"] = 3
