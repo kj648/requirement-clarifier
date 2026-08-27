@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "requirement-clarifier 确认单题目数据",
+  "description": "语义校验(依赖闭环/分支对称/建议措辞)由 scripts/build_questionnaire.py 执行,JSON Schema 无法表达。",
+  "type": "object",
+  "required": ["doc", "roles", "questions"],
+  "properties": {
+    "doc": {
+      "type": "object",
+      "required": ["id", "title", "round", "sent_by", "sent_on", "usage"],
+      "properties": {
+        "round": {"type": "integer", "description": "第 N 轮确认单。与 questions[].layer(依赖层级)是两个概念。"},
+        "code_rev": {"type": "string", "description": "build 时自动填 git rev-parse HEAD;仓库外运行留空。单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。"},
+        "due_days": {"type": "integer", "default": 3},
+        "usage": {"type": "string", "description": "给业务看的『你的答案会被用到哪里』"}
+      }
+    },
+    "roles": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "object", "required": ["id", "name"]},
+      "description": "回答人必须在此声明;questions[].who 只能引用 id。"
+    },
+    "part1": {
+      "type": "array",
+      "items": {"type": "object", "required": ["n", "we_understand"],
+                "properties": {"note": {"type": "string"}}},
+      "description": "第一部分逐条核对项。页面渲染为三态(对/不对/未表态),不设全局『无异议』。"
+    },
+    "layers": {"type": "array", "items": {"type": "object", "required": ["n"]}},
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["no", "layer", "title", "who", "advice_allowed", "evidence", "groups"],
+        "properties": {
+          "blocking": {"type": "boolean", "default": false},
+          "advice_allowed": {
+            "type": "boolean",
+            "description": "false = 规则/账务口径题,模板不渲染任何建议位,选项里出现建议措辞则拒绝出包。"
+          },
+          "evidence": {
+            "type": "object", "required": ["tier"],
+            "properties": {
+              "tier": {"enum": ["src", "code", "guess"]},
+              "cites": {"type": "array", "items": {
+                "type": "object", "required": ["kind", "path", "line", "snippet"],
+                "properties": {
+                  "kind": {"enum": ["src", "code"]},
+                  "logic": {"type": "string", "description": "kind=code 必填:一句白话说清这段代码实际做什么。这是开发对代码的解读,不是代码原文,页面上会标明。"},
+                  "entry": {"type": "string", "description": "kind=code 必填:这段逻辑从哪个页面/接口进来(path:line)。业务问的是『页面上』。"},
+                  "branches": {"type": "array", "description": "kind=code 必填:分支列表。",
+                    "items": {"type": "object", "required": ["cond", "then"],
+                              "properties": {"cite": {"type": "string"}}}},
+                  "branches_exhaustive": {"type": "boolean", "default": true,
+                    "description": "false = 没读完;此时该题 evidence.tier 必须降为 guess。"}
+                }}},
+              "weak": {"type": "string", "description": "tier=guess 必填:哪儿没据、为什么还问。"}
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object", "required": ["id", "options"],
+              "properties": {
+                "id": {"type": "string", "description": "'main' 为主问,其余为子问。"},
+                "ask": {"type": "string", "description": "子问的问法,会成为回执里『小问：答案』的左半。"},
+                "tier": {"enum": ["src", "code", "guess"], "description": "子问可单独标无据,不必整题降档。"},
+                "inline": {"type": "boolean"},
+                "options": {"type": "array", "items": {
+                  "type": "object", "required": ["key", "label"],
+                  "properties": {
+                    "cost": {"type": "string", "description": "该选项的代价/影响。"},
+                    "terminal": {"type": "boolean", "description": "显式声明此分支到此为止。"},
+                    "kind": {"enum": ["nonexistent", "dontknow"],
+                             "description": "nonexistent=这种情况不存在;dontknow=我不清楚。『都不是』兜底出口由模板自动追加,不在此声明。"}
+                  }}}
+              }
+            }
+          },
+          "demo": {
+            "type": "object",
+            "properties": {
+              "given": {"type": "string", "description": "演示数字的输入前提。"},
+              "basis": {"enum": ["branches", "assumed"],
+                        "description": "必填。branches=照 code 引用的分支算的;assumed=开发假设的算法,页面标注『未从代码验证』。"},
+              "rows": {"type": "array", "items": {
+                "type": "object", "required": ["when", "v"],
+                "properties": {"when": {"type": "array", "items": {"type": "string"}}}}}
+            }
+          },
+          "reveal": {"type": "array", "items": {
+            "type": "object", "required": ["when", "ask"]}}
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "properties": {
+        "na": {"type": "array", "items": {"type": "object", "required": ["when", "target", "note"]}},
+        "carry": {"type": "array", "items": {"type": "object", "required": ["from", "to"]}},
+        "clash": {"type": "array", "items": {
+          "type": "object", "required": ["when", "why"],
+          "properties": {"require_explain": {"type": "boolean", "default": true}}}}
+      }
+    }
+  }
+}
