@@ -305,6 +305,21 @@ def render_md(doc):
     return "\n".join(L)
 
 
+def infer_root(json_path):
+    """从 json 的位置往上找项目根 —— 含 docs/requirements/ 的那一层。
+
+    rules_ref.doc 是相对项目根写的(如 docs/requirements/rules/reminder.md),
+    而 json 自己就躺在 docs/requirements/questionnaires/ 下,所以项目根一定在
+    它的祖先里。不推断的话每个调用点都得记得传 --root,忘一次就报「规则文档
+    不存在」—— 本任务里已经踩了两次。
+    """
+    p = Path(json_path).resolve()
+    for d in p.parents:
+        if (d / "docs" / "requirements").is_dir():
+            return d
+    return Path(".")
+
+
 def _norm(s):
     return re.sub(r"\s+", "", str(s))
 
@@ -442,11 +457,15 @@ def main():
     ap.add_argument("-o", "--out")
     ap.add_argument("--md")
     ap.add_argument("--check", action="store_true", help="只校验不出包")
-    ap.add_argument("--root", default=".", help="项目根,用于解析 rules_ref 的路径")
+    ap.add_argument("--root", default=None,
+                    help="项目根,用于解析 rules_ref 的路径。默认从 json 位置往上找"
+                         "含 docs/requirements/ 的那一层;只有 json 不在项目内的"
+                         "特殊场合才需要显式传")
     args = ap.parse_args()
 
     doc = json.loads(Path(args.json_path).read_text(encoding="utf-8"))
-    errs = validate(doc) + validate_refs(doc, args.root)
+    root = args.root or infer_root(args.json_path)
+    errs = validate(doc) + validate_refs(doc, root)
     for e in errs:
         print(f"  ✗ {e}")
     if errs:
@@ -458,7 +477,7 @@ def main():
     if args.check:
         return
     out = Path(args.out or f"confirm-{doc['doc']['id']}-r{doc['doc']['round']}.html")
-    out.write_text(render_html(doc, TEMPLATE_PATH.read_text(encoding="utf-8"), args.root),
+    out.write_text(render_html(doc, TEMPLATE_PATH.read_text(encoding="utf-8"), root),
                    encoding="utf-8")
     print(f"✓ 已出包 {out}（{out.stat().st_size // 1024} KB，单文件自包含）")
     if args.md:

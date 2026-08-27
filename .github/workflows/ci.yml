@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate skill frontmatter
+        run: python3 scripts/validate_skill.py .
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: 样例确认单校验（依赖闭环/分支对称/建议措辞）
+        run: |
+          python3 scripts/build_questionnaire.py \
+            "examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json" \
+            --check
+
+      - name: 样例确认单出包（单文件自包含）
+        run: |
+          python3 scripts/build_questionnaire.py \
+            "examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json" \
+            -o /tmp/confirm.html
+          test -s /tmp/confirm.html
+
+      - name: 证据核验（样例 spec 的引用真伪）
+        run: |
+          python3 scripts/verify_evidence.py \
+            "examples/demo-project/docs/requirements/specs/逾期提醒.md" \
+            --root examples/demo-project
+
+      - name: 回执机检（旧手写样本回归）
+        run: |
+          python3 scripts/check_questionnaire.py \
+            "examples/demo-project/docs/requirements/raw/2026-07-14-确认单v1-回执.md"
+
+      - name: 模板 JS 语法检查
+        run: python3 scripts/check_template_js.py
