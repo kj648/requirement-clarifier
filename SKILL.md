@@ -1,6 +1,6 @@
 ---
 name: requirement-clarifier
-description: 帮开发者把没法直接开工的需求——业务方口述、群聊碎片、只写了正常流程的模糊 PRD、自己的产品构想，以及藏在现有 Excel/老系统里没人说得清的规则——变成边界清晰、每条决定可追溯、可直接落地的开发规格，并在项目里持续沉淀业务上下文。核心能力：①用系统化的盲区清单挑出需求里没讲清、但开发动手前必须确认的漏洞，变成需求方能回答的选择题；②对回答做成色分级与冲突检测，揪出答案里混着的新需求和与旧决定的矛盾；③处理开发中途的需求变更；④逆向现有 Excel/老系统的公式为规则文档并交规则 owner 验真；⑤维护 docs/requirements/ 下的业务上下文，越用越懂这个业务；⑥产出开发规格和业务能看懂的可填写确认单；⑦有代码库时主动审计操作×状态的组合链路，把代码里没人定义过的规则暴露成待确认问题。当用户是开发者、贴出模糊需求或一份 PRD 让你"理一下/看看有没有坑"、说"业务又改需求了"、要把老表格/老系统搬进新系统、想把自己的产品构想落成规格文档、或让你"排查一下这块链路/还有没有类似的坑"时，都应使用本 skill。
+description: 帮开发者把没法直接开工的需求——业务方口述、群聊碎片、只写了正常流程的模糊 PRD、自己的产品构想，以及藏在现有 Excel/老系统里没人说得清的规则——变成边界清晰、每条决定可追溯、可直接落地的开发规格，并在项目里持续沉淀业务上下文。核心能力：①用系统化的盲区清单挑出需求里没讲清、但开发动手前必须确认的漏洞，变成需求方能回答的选择题；②对回答做成色分级与冲突检测，揪出答案里混着的新需求和与旧决定的矛盾；③处理开发中途的需求变更；④逆向现有 Excel/老系统的公式为规则文档并交规则 owner 验真；⑤维护 docs/requirements/ 下的业务上下文，越用越懂这个业务；⑥产出开发规格和业务能看懂的可填写确认单；⑦有代码库时主动审计操作×状态的组合链路，把代码里没人定义过的规则暴露成待确认问题。当用户是开发者、贴出模糊需求或一份 PRD 让你"理一下/看看有没有坑"、说"业务又改需求了"、要把老表格/老系统搬进新系统、想把自己的产品构想落成规格文档、或让你"排查一下这块链路/还有没有类似的坑"时，都应使用本 skill。Also triggers in English: use this skill whenever a developer asks to clarify or de-risk an ambiguous requirement, review a vague PRD for gaps, handle a mid-development requirement change, migrate rules out of a legacy spreadsheet/system, or audit a code path for undefined rules.
 compatibility: opencode, claude-code, any-opencode-compatible-agent
 license: PolyForm-Noncommercial-1.0.0
 metadata:
