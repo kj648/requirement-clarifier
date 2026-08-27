@@ -252,6 +252,53 @@ def render_html(doc, template, root="."):
     return template.replace(PLACEHOLDER, payload)
 
 
+def render_md(doc):
+    """同一份 json 出 Markdown,供打印/docx/内网场合。
+    格式必须与 check_questionnaire.py 认的契约一致:
+    `### 问题 N：`、`☐ A. `、`【作答区】`、`## 填写信息`。"""
+    d = doc["doc"]
+    L = [f"# 需求确认单：{d['title']}（第 {d['round']} 轮）",
+         f"> 第 {d['round']} 轮 · {d['sent_on']} · 发出人：{d['sent_by']}"
+         f" · 共 {len(doc['questions'])} 题", ""]
+    L += [d["usage"], "",
+          "填写说明：第一部分请逐条核对；第二部分请在 ☐ 打勾、【作答区】作答。"
+          "标「业务定」的题必须您自己拍板；标「开发拟定」的是我们已经拟好的默认规则，"
+          "请过目，无异议即生效。填完发回即可。", ""]
+
+    if doc.get("part1"):
+        L += ["## 第一部分 · 我们理解的（请逐条核对）", "",
+              "| # | 我们理解的 | 备注 | 对不对 |", "|---|---|---|---|"]
+        L += [f"| {r['n']} | {r['we_understand']} | {r.get('note', '')} | ☐ 对　☐ 不对 |"
+              for r in doc["part1"]]
+        L += ["", "【作答区】哪条不对、哪里不对（全对就写「无异议」）：", ""]
+
+    L += ["## 第二部分 · 待确认问题（请作答）", ""]
+    for q in sorted(doc["questions"], key=lambda x: (x["layer"], x["no"])):
+        decide = "业务定" if q["decide"] == "biz" else "开发拟定·请过目"
+        L.append(f"### 问题 {q['no']}：{q['title']}（{decide}）"
+                 + ("（阻塞）" if q.get("blocking") else ""))
+        if q.get("background"):
+            L.append(f"背景：{q['background']}")
+        for g in q["groups"]:
+            if g["id"] != "main":
+                L.append(f"子问 · {g.get('ask', '')}：")
+            for o in g["options"]:
+                key = f"{o['key']}. " if re.fullmatch(r"[A-Z]\d*", str(o["key"])) else ""
+                mark = "⊘ " if o.get("kind") == "nonexistent" else ""
+                cost = f"（{o['cost']}）" if q.get("advice_allowed") and o.get("cost") else ""
+                L.append(f"☐ {key}{mark}{o['label']}{cost}")
+        L.append("☐ 都不是——我要选的不在这几个里（请在作答区写明实际口径）")
+        for r in q.get("reveal", []):
+            L.append(f"（若选 {r['when']}，请在作答区一并回答：{r['ask']}）")
+        L += ["【作答区】", ""]
+
+    L += ["## 填写信息",
+          "填写人：____　部门：____　日期：____",
+          "（留名字是为了日后能找回是谁定的；不填也能交，但只能按【开发拟定·待追认】入账）",
+          "代答／转交说明：____", ""]
+    return "\n".join(L)
+
+
 def _norm(s):
     return re.sub(r"\s+", "", str(s))
 
@@ -408,6 +455,9 @@ def main():
     out.write_text(render_html(doc, TEMPLATE_PATH.read_text(encoding="utf-8"), args.root),
                    encoding="utf-8")
     print(f"✓ 已出包 {out}（{out.stat().st_size // 1024} KB，单文件自包含）")
+    if args.md:
+        Path(args.md).write_text(render_md(doc), encoding="utf-8")
+        print(f"✓ 已出 Markdown {args.md}")
 
 
 if __name__ == "__main__":
