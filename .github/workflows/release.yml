@@ -19,11 +19,18 @@ jobs:
 
       - name: Package skill
         run: |
+          # docs/superpowers/* 是内部 SDD 产物(design/plan/prototype),不随包分发:
+          # 里面留着已被明令删除的「回填期限 3 个工作日」「due_days: 3」「建议由 XX
+          # 回答」这类历史决定 —— 装了 skill 的人翻到它会照着做,与现行纪律直接冲突。
+          # 这份排除列表与 README.md「本地打包」那条命令必须逐字相同。
           zip -r "requirement-clarifier.skill" . \
             -x ".git/*" \
             -x ".github/*" \
+            -x "docs/superpowers/*" \
+            -x ".superpowers/*" \
             -x "__pycache__/*" \
             -x "scripts/__pycache__/*" \
+            -x "tests/__pycache__/*" \
             -x "*.pyc" \
             -x ".DS_Store" \
             -x ".gitignore"

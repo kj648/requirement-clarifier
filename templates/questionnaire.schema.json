@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "requirement-clarifier 确认单题目数据",
-  "description": "语义校验(依赖闭环/分支对称/建议措辞)由 scripts/build_questionnaire.py 执行,JSON Schema 无法表达。",
+  "description": "本文件是给出题者读的契约,不参与运行时校验 —— 校验(含必填字段存在性、类型、依赖闭环/分支对称/建议措辞)全部在 scripts/build_questionnaire.py 的 validate() 里手写实现,两处需人工保持同步。改了这里的 required 就要改那里的 DOC_FIELDS/Q_FIELDS,反之亦然。",
   "type": "object",
   "required": ["doc", "questions"],
   "properties": {
@@ -29,7 +29,19 @@
         "properties": {
           "decide": {"enum": ["biz", "dev"],
             "description": "biz=业务必须自己定(答案记【业务确认】);dev=开发已拟默认规则,请业务过目(记【开发拟定】)。给谁去问是开发的事,不写进单子;阻塞级(blocking=true)不得标 dev。"},
-          "blocking": {"type": "boolean", "default": false},
+          "blocking": {"type": "boolean", "default": false,
+            "description": "true = 阻塞开发。此时必须配 demo(跨分支对照),否则出包时拒收 —— 只画岔口不算数 = 让人凭抽象拍板;且不得标 decide=dev。"},
+          "no": {"type": "integer", "description": "题号,必须是整数:页面用 === 严格比较它(clash 的挂载判据就是它),字符串 \"1\" 会让 clash 静默不挂载。"},
+          "layer": {"type": "integer", "description": "依赖层级,必须是整数:layer 之间要直接比大小。与 doc.round(第 N 轮)是两个概念。"},
+          "demo": {"type": "object", "required": ["basis"],
+            "properties": {
+              "given": {"type": "string", "description": "输入前提,同一组输入喂给所有候选选项。"},
+              "basis": {"enum": ["branches", "assumed"],
+                "description": "branches=照 code 引用的 branches 算的;assumed=开发自己假设的算法,页面与 md 都会标注「未从代码验证」。"},
+              "rows": {"type": "array", "items": {
+                "type": "object", "required": ["when"],
+                "properties": {"when": {"type": "array", "description": "该行对应哪些选项 key。"}}}}
+            }},
           "advice_allowed": {
             "type": "boolean",
             "description": "false = 规则/账务口径题,模板不渲染任何建议位,选项里出现建议措辞则拒绝出包。"
@@ -91,6 +103,7 @@
     },
     "links": {
       "type": "object",
+      "$comment": "when 表达式当前只支持 `&` 连接的等值判断(如 `1=A & 2=B`,题号可带组 id `7.crm=x`)。`|`、`!=`、`in [a,b]` 尚未实现,写了会在出包时红字拒收:页面的 meets() 没实现它们 —— 前两个静默恒 false(业务看到一道永不出现的题),`in [...]` 会让整页 JS 抛异常瘫痪。要启用必须同时改模板的 meets() 与 build_questionnaire.py 的 WHEN_TOKEN。",
       "properties": {
         "na": {"type": "array", "items": {"type": "object", "required": ["when", "target", "note"]}},
         "carry": {"type": "array", "items": {"type": "object", "required": ["from", "to"]}},

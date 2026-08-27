@@ -65,7 +65,7 @@ class TestRenderHtml(unittest.TestCase):
 
     def test_no_identity_partition_left(self):
         """身份分区已撤销 —— 残留的选择器会让人以为还能按人筛。
-        注:whoRow 容器 id 按брief「四处注意」指示保留(骨架不动,只换内容/逻辑),
+        注:whoRow 容器 id 按 brief「四处注意」指示保留(骨架不动,只换内容/逻辑),
         故不在此列检查——它是 Step 7 grep 允许命中 1 次的例外,与本测试的
         『残留身份分区痕迹』语义不冲突。"""
         for gone in ("offrole", "peekhint", "ownsRole", "rc-role", "填写身份"):
@@ -103,6 +103,33 @@ class TestRenderHtml(unittest.TestCase):
     def test_print_avoids_breaking_questions(self):
         m = re.search(r"@media print\{(.*?)\n\}", self.tpl, re.S)
         self.assertIn("break-inside:avoid", m.group(1).replace(" ", ""))
+
+    BOOT_MSG = ("这份单子需要浏览器的脚本功能才能显示题目。"
+                "请换用系统浏览器打开，或找发出人要一份 Markdown 版本填写。")
+
+    def test_noscript_tells_the_reader_what_to_do(self):
+        """题目全部由 JS 渲染 —— 剥掉 <script> 后页面可见文字只有 124 字的外壳:
+        无标题、无题目、无任何错误提示。受众是财务／运营,微信内置浏览器是已知风险。"""
+        m = re.search(r"<noscript>(.*?)</noscript>", self.tpl, re.S)
+        self.assertIsNotNone(m, "模板缺 <noscript> —— 没有 JS 时业务看到的是一张空壳")
+        self.assertIn(self.BOOT_MSG, m.group(1))
+
+    def test_boot_failure_shows_the_same_message(self):
+        """JSON.parse 与四个 render 调用都要有兜底 —— 数据块被邮件网关弄坏时,
+        业务看到的不能还是那张空壳。"""
+        self.assertEqual(self.tpl.count(self.BOOT_MSG), 2,
+                         "noscript 与 boot 失败两条路径应给同一句话")
+        m = re.search(r"try\s*\{\s*\n?\s*DATA\s*=\s*JSON\.parse\((.*?)\)\s*;?\s*\n?"
+                      r"\s*\}\s*catch", self.tpl, re.S)
+        self.assertIsNotNone(m, "JSON.parse 没被 try/catch 包住")
+        m2 = re.search(r"try\s*\{[^}]*renderMasthead\(\);[^}]*\}\s*catch", self.tpl, re.S)
+        self.assertIsNotNone(m2, "四个 render 调用没被 try/catch 包住")
+        self.assertIn("function bootFail(", self.tpl)
+
+    def test_boot_failure_message_survives_injection(self):
+        """出包后的真实 HTML 里也得在 —— 提示文案是模板常量,不该被数据注入吃掉。"""
+        self.assertIn(self.BOOT_MSG, self.html)
+        self.assertIn("<noscript>", self.html)
 
     def test_flex_row_parents_wrap_when_a_child_wants_its_own_row(self):
         """子元素 flex-basis:100% 意味着它想独占一行；父容器若是 nowrap,

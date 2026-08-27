@@ -25,6 +25,10 @@ def doc(**over):
              "groups": [{"id": "main", "options": [
                  {"key": "A", "label": "按 A"},
                  {"key": "B", "label": "按 B", "terminal": True}]}],
+             # 阻塞级必须配 demo（跨分支对照），否则是「只画岔口不算数」
+             "demo": {"given": "一笔 1000 元的单子", "basis": "branches",
+                      "rows": [{"when": ["A"], "k": "结果", "v": "按 A 算得 1000"},
+                               {"when": ["B"], "k": "结果", "v": "按 B 算得 950"}]},
              "reveal": [{"when": "A", "ask": "A 的细则"}]},
             {"no": 2, "layer": 2, "title": "后续题", "decide": "dev",
              "background": "背景", "advice_allowed": True,
@@ -328,6 +332,124 @@ class TestValidate(unittest.TestCase):
         d["questions"][1]["reveal"] = [{"when": "X", "ask": "X 的细则"}]
         d["links"]["carry"] = [{"from": "1.A", "to": "2.X", "kind": "fact"}]
         self.assertEqual(bq.validate(d), [])
+
+
+class TestMalformedInputReturnsInsteadOfRaising(unittest.TestCase):
+    """validate() 的 docstring 承诺「格式错的 json 也要给出诊断而不是让工具崩掉」。
+    这四种畸形输入以前是直接 traceback —— 出题者拿到的是栈,不是诊断。"""
+
+    def _errs(self, mutate):
+        d = doc()
+        mutate(d)
+        try:
+            return bq.validate(d)
+        except Exception as e:                      # noqa: BLE001 —— 抛了就是失败
+            self.fail(f"validate() 抛了 {type(e).__name__}: {e}")
+
+    def test_reviewed_diffs_in_words(self):
+        def m(d):
+            d["questions"][0]["evidence"]["reviewed"] = {
+                "by": "独立盲审", "on": "2026-08-27", "diffs": "两处"}
+        errs = self._errs(m)
+        self.assertTrue(any("diffs" in e and "整数" in e for e in errs), errs)
+
+    def test_reviewed_not_a_dict(self):
+        errs = self._errs(lambda d: d["questions"][0]["evidence"].__setitem__(
+            "reviewed", "审过了"))
+        self.assertTrue(any("reviewed" in e and "对象" in e for e in errs), errs)
+
+    def test_cites_is_a_string_array(self):
+        errs = self._errs(lambda d: d["questions"][0]["evidence"].__setitem__(
+            "cites", ["a.py:1"]))
+        self.assertTrue(any("cites" in e and "对象数组" in e for e in errs), errs)
+
+    def test_demo_not_a_dict(self):
+        errs = self._errs(lambda d: d["questions"][0].__setitem__("demo", "选 A 得 1000"))
+        self.assertTrue(any("demo" in e and "对象" in e for e in errs), errs)
+
+    def test_evidence_not_a_dict(self):
+        errs = self._errs(lambda d: d["questions"][0].__setitem__("evidence", "src"))
+        self.assertTrue(any("evidence" in e and "对象" in e for e in errs), errs)
+
+
+class TestRequiredFieldsMatchSchema(unittest.TestCase):
+    """schema 的 required 全仓 0 处被代码引用 —— 缺字段时以前是 validate PASS →
+    render_md KeyError。校验说没事,出包却崩。"""
+
+    def test_missing_question_fields_are_caught_before_render(self):
+        for field in ("layer", "title", "no", "decide", "advice_allowed",
+                      "evidence", "groups"):
+            d = doc()
+            del d["questions"][0][field]
+            errs = bq.validate(d)
+            self.assertTrue(any(field in e for e in errs), f"{field}: {errs}")
+
+    def test_missing_doc_fields_are_caught_before_render(self):
+        for field in ("round", "usage", "sent_by", "id", "title", "sent_on"):
+            d = doc()
+            del d["doc"][field]
+            errs = bq.validate(d)
+            self.assertTrue(any(field in e for e in errs), f"{field}: {errs}")
+
+    def test_render_md_would_have_crashed_on_those(self):
+        """反证:这些字段确实是 render_md 直接下标取的,少一个就 KeyError。"""
+        for field in ("round", "usage", "sent_by", "title", "sent_on"):
+            d = doc()
+            del d["doc"][field]
+            with self.assertRaises(KeyError, msg=f"doc.{field} 似乎不再是必填"):
+                bq.render_md(d)
+
+    def test_question_no_must_be_int(self):
+        """页面用 === 严格比较题号,字符串 "1" 会让 clash 静默不挂载。"""
+        d = doc()
+        d["questions"][0]["no"] = "1"
+        errs = bq.validate(d)
+        self.assertTrue(any("no" in e and "整数" in e for e in errs), errs)
+
+    def test_question_layer_must_be_int(self):
+        d = doc()
+        d["questions"][0]["layer"] = "1"
+        errs = bq.validate(d)
+        self.assertTrue(any("layer" in e and "整数" in e for e in errs), errs)
+
+    def test_bool_is_not_an_acceptable_no(self):
+        d = doc()
+        d["questions"][0]["no"] = True
+        errs = bq.validate(d)
+        self.assertTrue(any("整数" in e for e in errs), errs)
+
+
+class TestBlockingNeedsDemo(unittest.TestCase):
+    def test_blocking_question_without_demo_is_rejected(self):
+        """只画岔口不算数 = 让人凭抽象拍板。硬要求以前没有闸门。"""
+        d = doc()
+        d["questions"][0].pop("demo")
+        errs = bq.validate(d)
+        self.assertTrue(any("demo" in e and "阻塞" in e for e in errs), errs)
+
+    def test_non_blocking_question_needs_no_demo(self):
+        d = doc()
+        self.assertFalse(d["questions"][1].get("blocking"))
+        self.assertFalse([e for e in bq.validate(d) if "demo" in e])
+
+
+class TestOptionKeyUniqueness(unittest.TestCase):
+    def test_duplicate_key_across_groups_in_one_question_is_rejected(self):
+        """whenInWords() 按 key 反查标签,重名时取先出现的组 —— 业务会看到用错组
+        的措辞描述自己的选择。不改 JS,把错文案变成出包时拒收。"""
+        d = doc()
+        d["questions"][0]["groups"].append(
+            {"id": "sub", "ask": "细则", "options": [{"key": "A", "label": "细则 A"}]})
+        errs = bq.validate(d)
+        self.assertTrue(any("跨组唯一" in e for e in errs), errs)
+
+    def test_same_key_in_different_questions_is_fine(self):
+        """跨题重名无害 —— data-when 带题号前缀。"""
+        keys = [{o["key"] for g in q["groups"] for o in g["options"]}
+                for q in doc()["questions"]]
+        d = doc()
+        d["questions"][1]["groups"][0]["options"] = [{"key": "A", "label": "选 A"}]
+        self.assertEqual(bq.validate(d), [], keys)
 
 
 class TestCodeRev(unittest.TestCase):

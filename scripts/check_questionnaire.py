@@ -12,8 +12,10 @@
    未答 → WARN;题目标注"阻塞"未答 → FAIL。
 2. 多选提示: 同题勾选 >1 项 → WARN(请确认该题是否允许多选)。
 3. "我不清楚"台阶: 勾了"不清楚/不知道"但【作答区】未给知情人 → WARN(索要真正知情人)。
-4. 第一部分核对: 无"无异议"且【作答区】空 → WARN(已确认事项未核对)。
+4. 第一部分核对: 三态表里「未表态」的条数 >0 → WARN(点出条数);没有三态表的手写单
+   退回兜底判据 —— 无"无异议"且【作答区】空 → WARN。
 5. 落款检查: 填写信息区的 日期 空缺 → FAIL(落款是溯源凭证);部门空缺 → WARN。
+   空缺含导出器写的「（未填）」占位 —— 否则该告警是死规则。
 6. 模板残留: "出题规则(给生成方"未删除 → WARN(内部注释不应发给业务)。
 7. 业务证伪: `☒ 本题不成立` 单独计数并逐条列出 —— 该题需删除或重出,不得直接合并。
 8. 未署名: 填写人为空或含「未署名」→ WARN + 声明须按【开发拟定·待追认】入账
@@ -37,16 +39,35 @@ CLASH_HEAD = re.compile(r'^##\s*⚠?\s*填写时暴露的矛盾.*?$(?P<body>.*?)
 # (人话措辞会变;条件表达式只在机读区保留)
 CLASH_ITEM = re.compile(r'^\s*业务说明[：:]', re.M)
 NO_EXPLAIN = re.compile(r'业务说明[：:]\s*（未说明）')
+# 第一部分三态表里「未表态」的那一行(导出器写的表:`| 1 | 未表态 |  |`)。
+# 判据必须是数条数,不能是「这一段有没有字」—— 导出器无论核对与否都会把该列写满。
+P1_MUTE_ROW = re.compile(r'^\|[^|\n]*\|\s*未表态\s*\|', re.M)
 
 def substantive(text: str) -> bool:
     """作答区内容去掉模板占位(<...>、下划线)后是否还有实质内容。"""
     t = re.sub(r'<[^>]*>|＿+|_{2,}', '', text)
     return bool(t.strip())
 
+FIELD_KEYS = "填写人|部门|日期|代答|转交"
+
 def field_value(section: str, key: str) -> str:
-    m = re.search(rf'{key}\s*[:：]\s*([^\s:：]*)', section)
+    """取落款字段值。
+
+    值捕获必须在下一个字段名处截断 —— 早先的 `[^\\s:：]*` 会让空字段捕获到
+    下一个字段的标签名(如 填写人 捕获到 '部门'),于是空落款被当成已署名,
+    未署名告警静默失效。
+    另用 re.M 让 `$` 落在行尾:一行一组字段,而 HTML 导出的落款后面还跟着
+    机读 JSON 块,不锚行尾的话最后一个字段(日期)会一路匹配不到而误报缺失。
+    """
+    m = re.search(
+        rf'{key}\s*[:：][ \t]*(.*?)(?=[　\s]*(?:{FIELD_KEYS})\s*[:：]|$)',
+        section, re.M)
     if not m: return ""
-    return re.sub(r'＿+|_{2,}', '', m.group(1)).strip()
+    v = re.sub(r'＿+|_{2,}', '', m.group(1)).strip()
+    # 导出器对空字段写「（未填）」占位 —— 当成空,否则部门告警是死规则。
+    # 注意「（未署名·导出自 HTML 确认单）」不归为空:它要被 UNSIGNED 匹配到,
+    # 两条路径(手写空落款 / HTML 导出无署名)最终触发同一条 WARN。
+    return "" if v in ("（未填）", "(未填)") else v
 
 def check_file(fp: str):
     text = Path(fp).read_text(encoding="utf-8", errors="replace")
@@ -70,7 +91,12 @@ def check_file(fp: str):
     if part1 is not None:
         ans = " ".join((seg.strip().splitlines() or [""])[0]
                        for seg in part1.split(ANSWER_MARK)[1:])
-        if "无异议" not in part1 and not substantive(ans):
+        n_mute = len(P1_MUTE_ROW.findall(part1))
+        if n_mute:
+            warns.append(f"第一部分有 {n_mute} 条『未表态』—— 这些条目不得视为业务已认可,"
+                         f"须逐条核对完再入账(导出器无论核对与否都会写满该列,"
+                         f"只看『有没有字』永远查不出没核对)")
+        elif "无异议" not in part1 and not substantive(ans):
             warns.append("第一部分(已确认事项)未核对: 既无『无异议』也无异议说明")
 
     # 1-3、7. 逐题检测

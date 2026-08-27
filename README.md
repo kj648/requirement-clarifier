@@ -138,8 +138,13 @@ git clone https://github.com/kj648/requirement-clarifier.git \
 
 ```bash
 zip -r requirement-clarifier.skill . \
-  -x ".git/*" ".github/*" "__pycache__/*" "*.pyc" ".DS_Store" ".gitignore"
+  -x ".git/*" ".github/*" "docs/superpowers/*" ".superpowers/*" \
+     "__pycache__/*" "scripts/__pycache__/*" "tests/__pycache__/*" \
+     "*.pyc" ".DS_Store" ".gitignore"
 ```
+
+排除项与 `.github/workflows/release.yml` 逐字相同，改一处要改两处。`docs/superpowers/`
+是内部设计产物，留着已撤销的历史决定（回填期限、按人分区），不随包分发。
 
 打包前建议先运行校验脚本：
 

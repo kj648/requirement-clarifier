@@ -406,6 +406,13 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
   border-left:2px solid var(--amber);font-size:var(--t-cap);color:var(--ink)}
 .reviewed{margin-top:var(--s-2);padding:6px 10px;background:#EAF1EB;
   border-left:2px solid var(--green);font-size:var(--t-cap);color:var(--ink-70)}
+/* 题目全部由 JS 渲染 —— 脚本没跑起来时页面上只剩 124 字的外壳(标题、题目、
+   任何错误提示都没有)。受众是财务／运营,且微信内置浏览器是已知风险,
+   必须给一句业务看得懂、能自己往下走的话。 */
+.bootfail{margin:var(--s-4) 0;padding:14px 16px;border:2px solid var(--red);
+  background:#FBEDEA;font-size:var(--t-body);line-height:1.7;color:var(--ink)}
+.bootfail .why{margin-top:8px;font-family:var(--mono);font-size:var(--t-label);
+  color:var(--ink-45);word-break:break-all}
 
 @media (max-width:860px){
   .body{grid-template-columns:1fr;gap:18px}
@@ -448,6 +455,19 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
 
 
 <script id="qdata" type="application/json">__QUESTIONNAIRE_DATA__</script>
+
+<!-- 同一句话写两遍是刻意的:noscript 只在完全没有 JS 时显示,下面那个 div 是
+     JS 跑起来了但 boot 抛异常时用的(数据块被邮件网关/复制粘贴弄坏最常见)。
+     两种失败对业务是同一件事,所以给同一句话;措辞用后果说话,并给出下一步。 -->
+<noscript>
+  <div class="bootfail" role="alert">
+    这份单子需要浏览器的脚本功能才能显示题目。请换用系统浏览器打开，或找发出人要一份 Markdown 版本填写。
+  </div>
+</noscript>
+<div class="bootfail" id="bootfail" role="alert" hidden>
+  这份单子需要浏览器的脚本功能才能显示题目。请换用系统浏览器打开，或找发出人要一份 Markdown 版本填写。
+  <div class="why" id="bootfailWhy"></div>
+</div>
 
 <header class="masthead" id="masthead"></header>
 <div class="howto" id="howto"></div>
@@ -495,7 +515,24 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
 <script>
 /* ── 渲染器：题目内容全部来自注入的 qdata，模板本身不含任何项目内容 ──────────
    必须先跑完再取 .q 节点：下面的 QS、索引、兜底出口都依赖已渲染好的 DOM。 */
-const DATA = JSON.parse(document.getElementById('qdata').textContent);
+/* boot 失败时把页面上那句提示显示出来 —— 不给提示的话业务看到的是一张
+   124 字的空壳:没有标题、没有题目、也没有任何线索说该找谁。
+   技术细节另起一行给开发,业务不用理会。 */
+function bootFail(e){
+  const box = document.getElementById('bootfail'), why = document.getElementById('bootfailWhy');
+  if(box) box.hidden = false;
+  if(why) why.textContent = '技术细节（给开发看）：' + (e && e.message ? e.message : e);
+  ['statusbar','body'].forEach(c => document.querySelectorAll('.' + c)
+    .forEach(el => el.style.display = 'none'));
+}
+
+let DATA;
+try {
+  DATA = JSON.parse(document.getElementById('qdata').textContent);
+} catch(e) {
+  bootFail(e);
+  throw e;          /* 后面的渲染依赖 DATA,继续跑只会刷一串二级异常 */
+}
 const esc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -774,7 +811,12 @@ function renderSignoff(){
     </div>`;
 }
 
-renderMasthead(); renderPart1(); renderPart2(); renderSignoff();
+try {
+  renderMasthead(); renderPart1(); renderPart2(); renderSignoff();
+} catch(e) {
+  bootFail(e);
+  throw e;          /* QS、索引、事件绑定全依赖已渲染好的 DOM,不能带伤往下走 */
+}
 
 const QS = [...document.querySelectorAll('.q')];
 /* 第一部分的条目号由数据决定 —— 写死 [1,2,3,4,5] 会让条目数不等于 5 的单子
