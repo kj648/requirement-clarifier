@@ -37,6 +37,32 @@ def extract_script(html: str) -> str:
     return max(blocks, key=len)
 
 
+def extract_fn(js, name):
+    """按括号计数截出一个函数,不多不少 —— 单行/多行都对。
+
+    别用 `function name\\(.*?\\n\\}` 那种正则:单行实现的函数闭合括号不在独立行上,
+    非贪婪匹配会一路吃到下一个函数的结尾,把别人的函数体也拖进探针里(实测踩过 ——
+    whenToDom 是单行实现,曾把紧跟其后的 questionHtml 整个函数体一起抠出来)。
+
+    已知局限:括号计数不解析字符串/正则/注释里的花括号,如果目标函数体内出现含
+    `{`/`}` 的字符串字面量或正则,截取会错。当前 whenToDom 的实现只是一行
+    `String(expr).replace(/…/g, '$1q$2')`,不含花括号,所以安全;真要变复杂时
+    应改用真正的 JS 解析器,而不是在这里加更多补丁。
+    """
+    i = js.find(f"function {name}(")
+    if i < 0:
+        return None
+    depth = 0
+    for k in range(js.index("{", i), len(js)):
+        if js[k] == "{":
+            depth += 1
+        elif js[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return js[i:k + 1]
+    return None
+
+
 def main():
     html = TPL.read_text(encoding="utf-8")
     js = extract_script(html)
@@ -51,14 +77,19 @@ def main():
     r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
     if r.returncode != 0:
         print(f"  ✗ 模板 JS 语法错误:\n{r.stderr.strip()}"); sys.exit(1)
-    print(f"  ✓ 模板 JS 语法通过({len(js)} 字节)")
+    print(f"  ✓ 模板 JS 语法通过({len(js)} 字符)")
 
     # whenToDom 契约:抠出函数体单独跑,不依赖 DOM
-    m = re.search(r"function whenToDom\(.*?\n\}", js, re.S)
-    if not m:
+    fn = extract_fn(js, "whenToDom")
+    if not fn:
         print("  ✗ 模板里找不到 whenToDom() —— 条件表达式的题号→DOM name 转换没了"); sys.exit(1)
+    # 自检:抠多了就直接报,别让探针带着别人的函数体跑
+    if fn.count("function ") > 1:
+        print("  ✗ 抠出的 whenToDom 里含第二个 function —— 截多了,探针跑的不是它自己"); sys.exit(1)
+    if not fn.endswith("}"):
+        print("  ✗ 抠出的 whenToDom 没有闭合 —— 括号计数没截到底"); sys.exit(1)
     probe = d / "probe.mjs"
-    probe.write_text(m.group(0) + "\n"
+    probe.write_text(fn + "\n"
                      + f"const cases = {json.dumps(WHEN_CASES, ensure_ascii=False)};\n"
                      + "const bad = cases.filter(([i, o]) => whenToDom(i) !== o)\n"
                      + "  .map(([i, o]) => `${i} -> ${whenToDom(i)} (期望 ${o})`);\n"

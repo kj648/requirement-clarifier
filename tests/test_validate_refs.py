@@ -69,5 +69,42 @@ class TestInferRoot(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
 
+class TestExtractFn(unittest.TestCase):
+    def _mod(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ctjs", ROOT / "scripts" / "check_template_js.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+
+    def test_single_line_function_is_not_over_captured(self):
+        """单行实现的函数,闭合括号不在独立行上 —— 不该把下一个函数一起拖进来。"""
+        js = ("function a(x){ return x + 1; }\n"
+              "function b(y){\n  return y * 2;\n}\n")
+        got = self._mod().extract_fn(js, "a")
+        self.assertEqual(got, "function a(x){ return x + 1; }")
+        self.assertEqual(got.count("function "), 1)
+
+    def test_multi_line_function_is_captured_whole(self):
+        js = "function b(y){\n  if (y) {\n    return 1;\n  }\n  return 2;\n}\nfunction c(){}\n"
+        got = self._mod().extract_fn(js, "b")
+        self.assertTrue(got.endswith("}"), got)
+        self.assertEqual(got.count("function "), 1)
+        self.assertIn("return 2;", got)
+
+    def test_missing_function_returns_none(self):
+        self.assertIsNone(self._mod().extract_fn("function a(){}", "nope"))
+
+    def test_real_template_whenToDom_is_exactly_one_function(self):
+        """对真实模板跑一遍 —— 这条正好能抓住『抠多了』那个 bug。"""
+        html = (ROOT / "templates" / "questionnaire.html").read_text(encoding="utf-8")
+        m = self._mod()
+        fn = m.extract_fn(m.extract_script(html), "whenToDom")
+        self.assertIsNotNone(fn)
+        self.assertEqual(fn.count("function "), 1, fn[:200])
+        self.assertTrue(fn.endswith("}"), fn[-80:])
+
+
 if __name__ == "__main__":
     unittest.main()
