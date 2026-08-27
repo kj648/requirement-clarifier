@@ -61,7 +61,11 @@ def doc(**over):
             {"no": 1, "layer": 1, "blocking": True, "title": "口径 A 还是 B？",
              "who": ["fin"], "background": "背景", "advice_allowed": False,
              "evidence": {"tier": "code", "cites": [
-                 {"kind": "code", "path": "a.py", "line": 1, "snippet": "x = 1"}]},
+                 {"kind": "code", "path": "a.py", "line": 1, "snippet": "x = 1",
+                  "logic": "取值为 1，没有其它赋值点",
+                  "entry": "api.py:9",
+                  "branches": [{"cond": "总是", "then": "x = 1", "cite": "a.py:1"}],
+                  "branches_exhaustive": True}]},
              "groups": [{"id": "main", "options": [
                  {"key": "A", "label": "按 A"},
                  {"key": "B", "label": "按 B", "terminal": True}]}],
@@ -145,6 +149,48 @@ class TestValidate(unittest.TestCase):
         d["questions"][1]["evidence"] = {"tier": "guess", "cites": []}
         errs = bq.validate(d)
         self.assertTrue(any("weak" in e for e in errs), errs)
+
+    def test_code_cite_requires_logic_entry_branches(self):
+        """单点行引用只证明那行存在,不证明当前页面的行为。"""
+        for field in ("logic", "entry", "branches"):
+            d = doc()
+            del d["questions"][0]["evidence"]["cites"][0][field]
+            errs = bq.validate(d)
+            self.assertTrue(any(field in e for e in errs), f"{field}: {errs}")
+
+    def test_non_exhaustive_branches_forces_guess_tier(self):
+        """声明没读完分支 → 该题必须降为 guess,不得继续冒充 code 档。"""
+        d = doc()
+        d["questions"][0]["evidence"]["cites"][0]["branches_exhaustive"] = False
+        errs = bq.validate(d)
+        self.assertTrue(any("guess" in e for e in errs), errs)
+
+    def test_non_exhaustive_branches_ok_when_tier_is_guess(self):
+        d = doc()
+        ev = d["questions"][0]["evidence"]
+        ev["cites"][0]["branches_exhaustive"] = False
+        ev["tier"] = "guess"
+        ev["weak"] = "只读了主流程，别处可能还有覆盖，请当作未取证看"
+        self.assertEqual(bq.validate(d), [])
+
+    def test_demo_basis_is_required(self):
+        d = doc()
+        d["questions"][0]["demo"] = {"given": "输入", "rows": [{"when": ["A"], "v": "1"}]}
+        errs = bq.validate(d)
+        self.assertTrue(any("basis" in e for e in errs), errs)
+
+    def test_demo_basis_branches_needs_actual_branches(self):
+        d = doc()
+        d["questions"][1]["demo"] = {"given": "输入", "basis": "branches",
+                                     "rows": [{"when": ["X"], "v": "1"}]}
+        errs = bq.validate(d)   # 问题 2 是 guess 档,没有 code 引用
+        self.assertTrue(any("branches" in e for e in errs), errs)
+
+    def test_demo_basis_assumed_is_allowed_without_code(self):
+        d = doc()
+        d["questions"][1]["demo"] = {"given": "输入", "basis": "assumed",
+                                     "rows": [{"when": ["X"], "v": "1"}]}
+        self.assertEqual(bq.validate(d), [])
 
     def test_reveal_when_must_be_own_option_key(self):
         d = doc()
@@ -232,6 +278,9 @@ def validate(doc):
         elif tier == "guess" and not (ev.get("weak") or "").strip():
             errs.append(f"{tag}: tier=guess 必须写 weak,说明哪儿没据、为什么还问")
 
+        errs.extend(_check_code_cites(ev, tier, tag))
+        errs.extend(_check_demo(q, ev, tag))
+
         if not q.get("advice_allowed", False):
             for g in q.get("groups", []):
                 for o in g.get("options", []):
@@ -252,6 +301,44 @@ def validate(doc):
             errs.extend(_check_link(kind, it, layer_of))
 
     return errs
+
+
+def _check_code_cites(ev, tier, tag):
+    """code 档的失败模式不是『原话被改写』,而是『单点引用冒充整体逻辑』。
+    一行赋值不证明它是唯一赋值点、没有别处覆盖、没有 flag 短路。"""
+    errs, code_cites = [], [c for c in ev.get("cites", []) if c.get("kind") == "code"]
+    for c in code_cites:
+        where = f"{c.get('path')}:{c.get('line')}"
+        if not str(c.get("logic") or "").strip():
+            errs.append(f"{tag}: code 引用 {where} 缺 `logic` —— 要有一句白话说清"
+                        f"这段代码实际做什么,给业务否掉的机会")
+        if not str(c.get("entry") or "").strip():
+            errs.append(f"{tag}: code 引用 {where} 缺 `entry` —— 业务问的是『页面上』,"
+                        f"得指出这段逻辑从哪个页面/接口进来")
+        if not c.get("branches"):
+            errs.append(f"{tag}: code 引用 {where} 缺 `branches` —— 分支穷举义务同样适用于证据;"
+                        f"确实没读完请写 branches_exhaustive:false")
+    if any(c.get("branches_exhaustive") is False for c in code_cites) and tier != "guess":
+        errs.append(f"{tag}: 有 code 引用声明 branches_exhaustive:false,"
+                    f"该题 evidence.tier 必须降为 guess 并写 weak —— 没读完的逻辑不得冒充有据")
+    return errs
+
+
+def _check_demo(q, ev, tag):
+    """演示数字是照逻辑算出来的。逻辑从哪来必须说清,否则业务照凭空的数字选口径。"""
+    demo = q.get("demo")
+    if not demo:
+        return []
+    basis = demo.get("basis")
+    if basis not in ("branches", "assumed"):
+        return [f"{tag}: demo.basis 必须是 branches 或 assumed,实际「{basis}」"
+                f" —— 演示数字得说清算法从哪来"]
+    if basis == "branches":
+        has = any(c.get("branches") for c in ev.get("cites", []) if c.get("kind") == "code")
+        if not has:
+            return [f"{tag}: demo.basis=branches 但没有任何 code 引用的 branches 可依据;"
+                    f"若数字是开发自己假设的算法,请改 basis=assumed(页面会标注未从代码验证)"]
+    return []
 
 
 def _check_branches(q, tag):
@@ -316,7 +403,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: 运行测试，确认通过**
 
 Run: `python3 -m unittest discover -s tests -p 'test_build*.py' -v`
-Expected: PASS，12 个测试
+Expected: PASS，18 个测试
 
 - [ ] **Step 5: 写 schema 契约文档**
 
@@ -335,6 +422,7 @@ Create `templates/questionnaire.schema.json`。它是**给出题者读的契约*
       "required": ["id", "title", "round", "sent_by", "sent_on", "usage"],
       "properties": {
         "round": {"type": "integer", "description": "第 N 轮确认单。与 questions[].layer(依赖层级)是两个概念。"},
+        "code_rev": {"type": "string", "description": "build 时自动填 git rev-parse HEAD;仓库外运行留空。单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。"},
         "due_days": {"type": "integer", "default": 3},
         "usage": {"type": "string", "description": "给业务看的『你的答案会被用到哪里』"}
       }
@@ -367,7 +455,17 @@ Create `templates/questionnaire.schema.json`。它是**给出题者读的契约*
             "properties": {
               "tier": {"enum": ["src", "code", "guess"]},
               "cites": {"type": "array", "items": {
-                "type": "object", "required": ["kind", "path", "line", "snippet"]}},
+                "type": "object", "required": ["kind", "path", "line", "snippet"],
+                "properties": {
+                  "kind": {"enum": ["src", "code"]},
+                  "logic": {"type": "string", "description": "kind=code 必填:一句白话说清这段代码实际做什么。这是开发对代码的解读,不是代码原文,页面上会标明。"},
+                  "entry": {"type": "string", "description": "kind=code 必填:这段逻辑从哪个页面/接口进来(path:line)。业务问的是『页面上』。"},
+                  "branches": {"type": "array", "description": "kind=code 必填:分支列表。",
+                    "items": {"type": "object", "required": ["cond", "then"],
+                              "properties": {"cite": {"type": "string"}}}},
+                  "branches_exhaustive": {"type": "boolean", "default": true,
+                    "description": "false = 没读完;此时该题 evidence.tier 必须降为 guess。"}
+                }}},
               "weak": {"type": "string", "description": "tier=guess 必填:哪儿没据、为什么还问。"}
             }
           },
@@ -395,6 +493,8 @@ Create `templates/questionnaire.schema.json`。它是**给出题者读的契约*
             "type": "object",
             "properties": {
               "given": {"type": "string", "description": "演示数字的输入前提。"},
+              "basis": {"enum": ["branches", "assumed"],
+                        "description": "必填。branches=照 code 引用的分支算的;assumed=开发假设的算法,页面标注『未从代码验证』。"},
               "rows": {"type": "array", "items": {
                 "type": "object", "required": ["when", "v"],
                 "properties": {"when": {"type": "array", "items": {"type": "string"}}}}}
@@ -437,7 +537,9 @@ git commit -m "feat: questionnaire.json 契约与校验器
 先有真实数据，Task 3 的渲染器才有东西可渲染。沿用 `examples/demo-project` 已有的逾期提醒案例，引用真实的归档原话行号。
 
 **Files:**
+- Create: `examples/demo-project/app/reminder_rules.py`（桩件，让样例能演示 `code` 档证据）
 - Create: `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json`
+- Modify: `examples/README.md`
 - Test: `tests/test_example_questionnaire.py`
 
 **Interfaces:**
@@ -489,6 +591,35 @@ class TestExample(unittest.TestCase):
                 self.assertIn(c["snippet"].strip(), lines[c["line"] - 1],
                               f"{c['path']}:{c['line']} 找不到片段「{c['snippet']}」")
 
+    def test_code_cite_entry_and_branch_coordinates_resolve(self):
+        """code 档的 entry 与每个 branch 的 cite 也必须是真坐标,不是编的。"""
+        base = ROOT / "examples/demo-project"
+
+        def resolve(coord):
+            path, _, line = str(coord).rpartition(":")
+            f = base / path
+            self.assertTrue(f.is_file(), f"坐标指向的文件不存在: {coord}")
+            n = len(f.read_text(encoding="utf-8").splitlines())
+            self.assertTrue(0 < int(line) <= n, f"{coord} 超出文件行数 {n}")
+
+        seen = 0
+        for q in self.doc["questions"]:
+            for c in q["evidence"].get("cites", []):
+                if c.get("kind") != "code":
+                    continue
+                seen += 1
+                resolve(c["entry"])
+                for b in c["branches"]:
+                    if b.get("cite"):
+                        resolve(b["cite"])
+        self.assertGreater(seen, 0, "样例应至少有一道 code 档题,否则演示不到最易出错的证据类型")
+
+    def test_demo_basis_declared_where_demo_exists(self):
+        for q in self.doc["questions"]:
+            if q.get("demo"):
+                self.assertIn(q["demo"].get("basis"), ("branches", "assumed"),
+                              f"问题 {q['no']} 的 demo 未声明 basis")
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -501,7 +632,47 @@ if __name__ == "__main__":
 Run: `python3 -m unittest tests.test_example_questionnaire -v`
 Expected: FAIL — `FileNotFoundError`（样例 json 还不存在）
 
-- [ ] **Step 3: 写样例 json**
+- [ ] **Step 3: 写代码桩件**
+
+样例项目原本只有 `docs/`，无法演示 `code` 档证据——而 `code` 档恰恰是最容易"单点引用
+冒充整体逻辑"的一类。加一个最小桩件，行号必须与下面完全一致（Task 2 的测试会逐条核验坐标）。
+
+Create `examples/demo-project/app/reminder_rules.py`：
+
+```python
+"""逾期提醒的现有判定逻辑。
+
+demo 桩件：让样例确认单能演示 code 档证据（logic / entry / branches）。
+真实项目里这里是你自己的代码。
+"""
+GRACE_DAYS = 0
+
+
+def is_overdue(bill, today):
+    if bill.due_date is None:          # 没填账期的单子没有到期日
+        return False
+    return today > bill.due_date + GRACE_DAYS
+
+
+def should_remind(bill, today, sent_times):
+    if not is_overdue(bill, today):
+        return False
+    if bill.balance <= 0:              # 余额清零即视为已还清,不看状态字段
+        return False
+    return sent_times < 3              # 最多发 3 次
+```
+
+在 `examples/README.md` 末尾加一段说明，免得读者以为 skill 要求这个目录结构：
+
+```markdown
+## 关于 `app/reminder_rules.py`
+
+这是**桩件**，不是 skill 的目录约定。它存在的唯一目的是让样例确认单能演示
+`code` 档证据——`logic`（白话逻辑）／`entry`（页面入口）／`branches`（分支），
+以及测试如何逐条核验这些坐标是真的。真实项目里对应的是你自己的代码。
+```
+
+- [ ] **Step 4: 写样例 json**
 
 Create `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期提醒-r1.json`。引用的两行原话来自 `raw/2026-07-10-李姐微信语音转述.md` 第 6 行「别发太勤,客户烦。」与第 7 行「对了,提醒完了要是还没还,过几天再提醒一次。」：
 
@@ -579,6 +750,40 @@ Create `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期
       "reveal": [{"when": "A", "ask": "达到上限后怎么办"}]
     },
     {
+      "no": 4, "layer": 1,
+      "title": "「已还清」按余额判还是按状态字段判？",
+      "who": ["fin_wang"],
+      "background": "代码现在按余额是否清零判定已还清。如果单子的状态字段和余额可能不一致（比如做过差额处理但余额没归零），就会继续发提醒。",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "code",
+        "cites": [{
+          "kind": "code",
+          "path": "app/reminder_rules.py", "line": 18,
+          "snippet": "if bill.balance <= 0:",
+          "logic": "代码现在按余额是否 ≤ 0 判定已还清，完全不看单子的状态字段；余额没归零就一直算未还清。",
+          "entry": "app/reminder_rules.py:15",
+          "branches": [
+            {"cond": "余额 ≤ 0", "then": "不再提醒", "cite": "app/reminder_rules.py:19"},
+            {"cond": "余额 > 0 且已逾期", "then": "提醒，累计发满 3 次为止", "cite": "app/reminder_rules.py:20"}
+          ],
+          "branches_exhaustive": true
+        }]
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "就按余额判（与现在代码一致，不用改）", "terminal": true},
+        {"key": "B", "label": "按状态字段判（差额处理过的单子即视为已还清）", "terminal": true}
+      ]}],
+      "demo": {
+        "given": "一张单子应收 1000 元，收到 950 元，剩 50 元做了差额处理但余额字段仍为 50",
+        "basis": "branches",
+        "rows": [
+          {"when": ["A"], "k": "系统行为", "v": "继续提醒"},
+          {"when": ["B"], "k": "系统行为", "v": "停止提醒"}
+        ]
+      }
+    },
+    {
       "no": 3, "layer": 1, "blocking": true,
       "title": "客户还了一部分，还提醒吗？",
       "who": ["fin_wang"],
@@ -608,22 +813,26 @@ Create `examples/demo-project/docs/requirements/questionnaires/2026-07-11-逾期
 `links.na` 的 `when: "2=B"` 与 `target: "2.after_cap"` 是**同一题内的组间依赖**——主问
 决定子问，天然同层，Task 1 的 `_check_link` 已对自引用豁免层级检查。
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [ ] **Step 5: 运行测试，确认通过**
 
 Run: `python3 -m unittest discover -s tests -p 'test_*.py' -v`
 Expected: PASS，全部测试通过（含 `test_cites_point_at_real_archived_lines` —— 它保证
 样例里每条引用真的指向归档原文那一行）
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
-git add examples/demo-project/docs/requirements/questionnaires/ \
+git add examples/demo-project/app/ examples/README.md \
+        examples/demo-project/docs/requirements/questionnaires/ \
         tests/test_example_questionnaire.py
 git commit -m "feat: 逾期提醒样例 questionnaire.json
 
 演示 reveal / links.na / links.clash 三种依赖，含一道 tier=guess 的无据题
 （部分还款场景是从盲区清单推的，不是业务说过的）。测试逐条核验 cites 真的
-指向归档原文那一行，防编造坐标。"
+指向归档原文那一行、code 档的 entry 与每个 branch 的 cite 也是真坐标，防编造。
+
+加了 app/reminder_rules.py 桩件：样例原本只有 docs/，演示不到 code 档——而 code 档
+恰恰是最容易『单点引用冒充整体逻辑』的一类。"
 ```
 
 ---
@@ -694,6 +903,17 @@ class TestRenderHtml(unittest.TestCase):
     def test_placeholder_is_gone(self):
         self.assertNotIn("__QUESTIONNAIRE_DATA__", self.html)
 
+    def test_code_rev_is_filled(self):
+        """代码依据有时效性:没有 rev 就说不出『当时代码是这样的』。"""
+        import re as _re, json as _json
+        data = _json.loads(_re.search(r'<script id="qdata"[^>]*>(.*?)</script>',
+                                      self.html, _re.S).group(1))
+        self.assertTrue(data["doc"].get("code_rev"), "build 应自动填入 code_rev")
+
+    def test_logic_is_marked_as_developer_reading(self):
+        """logic 是开发对代码的解读,页面必须标明,不能让业务当成自己说过的话。"""
+        self.assertIn("这是开发读代码得出的理解", self.tpl)
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -762,6 +982,8 @@ function renderMasthead(){
         本轮共 <b>${DATA.questions.length} 道</b>待确认问题${
           blocking.length ? `，其中 <b>问题 ${blocking.join('、')}</b> 请先答` : ''}。<br>
         <span class="usage">${esc(d.usage)}</span>
+        ${d.code_rev ? `<span class="rev">代码依据取自 ${esc(d.code_rev.slice(0,8))}
+          —— 这之后代码若有变动，结论需重新确认</span>` : ''}
       </div>
     </div>
     <div class="seal"><span class="no">${esc(d.id)}</span>
@@ -796,12 +1018,32 @@ function renderPart1(){
       <textarea id="a-part1" rows="2"></textarea></div>`;
 }
 
+/* 依据区分两层：外层给业务看白话，坐标折叠在内层给开发与复核。
+   业务看不懂 app/models/receivable.py:41，直接怼给他是噪音。 */
+function citeHtml(c){
+  const kindLabel = c.kind === 'src' ? '原话' : '代码';
+  const coords = `<code>&gt; 证据: ${esc(c.path)}:${c.line} | "${esc(c.snippet)}"</code>`;
+  if(c.kind !== 'code')
+    return `<div class="cite"><span class="cite-k src">${kindLabel}</span>${coords}</div>`;
+  const brs = (c.branches || []).map(b =>
+    `<li>${esc(b.cond)} → ${esc(b.then)}${b.cite ? ` <code>${esc(b.cite)}</code>` : ''}</li>`).join('');
+  return `<div class="cite code-cite">
+      <div class="logic"><b>我们查代码看到系统现在是这么做的：</b>${esc(c.logic)}
+        <span class="logic-note">（这是开发读代码得出的理解，不是您说过的话——不对请直接指出）</span></div>
+      <details class="coords"><summary>代码位置与分支（开发看）</summary>
+        <div>${coords}</div>
+        <div class="entry">入口：<code>${esc(c.entry)}</code></div>
+        ${brs ? `<ul class="brs">${brs}</ul>` : ''}
+        ${c.branches_exhaustive === false
+          ? '<div class="ev-weak">⚠ 分支未读完，本题依据已降为「无据」处理</div>' : ''}
+      </details>
+    </div>`;
+}
+
 function evHtml(q){
   const ev = q.evidence || {}, [label, cls] = TIER_LABEL[ev.tier] || TIER_LABEL.guess;
   const open = (ev.tier === 'guess' || ev.weak) ? ' open' : '';
-  const cites = (ev.cites || []).map(c =>
-    `<div class="cite"><span class="cite-k ${c.kind}">${c.kind === 'src' ? '原话' : '代码'}</span>`
-  + `<code>&gt; 证据: ${esc(c.path)}:${c.line} | "${esc(c.snippet)}"</code></div>`).join('')
+  const cites = (ev.cites || []).map(citeHtml).join('')
     || '<div class="cite none">这道题没有任何来源引用——纯粹是开发从盲区清单推的。</div>';
   return `<details class="ev tier-${cls}"${open}>
       <summary><span class="ev-badge ${cls}">${label}</span>
@@ -844,9 +1086,12 @@ function demoHtml(q){
   const rows = q.demo.rows.map(r =>
     `<tr data-hit="${r.when.join('|')}"><td class="k">${esc(r.k || '结果')}</td>`
   + `<td class="v">${esc(r.v)}</td></tr>`).join('');
+  const assumed = q.demo.basis === 'assumed'
+    ? '<div class="demo-assumed">演示数字基于开发假设的算法，未从代码验证——'
+      + '如果实际不是这么算的，请在补充说明里写明</div>' : '';
   return `<div class="demo"><div class="demo-hd"><span class="lb">演示数字</span>
       <span class="given">${esc(q.demo.given)}</span></div>
-    <table><tbody>${rows}</tbody></table></div>`;
+    <table><tbody>${rows}</tbody></table>${assumed}</div>`;
 }
 
 /** schema 用题号（"2=B"），DOM 用输入框 name（"q2=B"）。 */
@@ -939,8 +1184,23 @@ renderMasthead(); renderPart1(); renderPart2(); renderSignoff();
 **3d. 加 layer 分隔样式。** 在 CSS 里加：
 
 ```css
+.rev{display:block;margin-top:4px;color:var(--ink-45);font-size:12px;font-family:var(--mono)}
 .layer-hd{margin:26px 0 8px;padding:7px 12px;background:var(--sheet-2);
   border-left:2px solid var(--ink-45);font-size:13px;color:var(--ink-70)}
+
+/* 依据两层：白话在外，坐标折叠在内 */
+.code-cite{display:block;padding:8px 0}
+.code-cite .logic{font-size:13.5px;line-height:1.75;color:var(--ink)}
+.code-cite .logic b{color:var(--blue)}
+.logic-note{color:var(--ink-45);font-size:12.5px}
+.coords{margin-top:7px}
+.coords summary{cursor:pointer;font-size:12px;color:var(--ink-45);font-family:var(--mono)}
+.coords summary:hover{color:var(--ink)}
+.coords>div,.coords .brs{margin-top:6px}
+.coords .entry{font-size:12px;color:var(--ink-70)}
+.coords .brs{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-70)}
+.demo-assumed{padding:7px 13px;border-top:1px dashed var(--red);
+  background:var(--red-soft);font-size:12.5px;color:var(--ink)}
 ```
 
 - [ ] **Step 4: 加 `render_html`**
@@ -955,10 +1215,22 @@ PLACEHOLDER = "__QUESTIONNAIRE_DATA__"
 并加函数（放在 `validate` 之后）：
 
 ```python
+def code_rev():
+    """当前仓库的 HEAD。单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。
+    仓库外运行(chat/agent 环境)返回空串。"""
+    import subprocess
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                              text=True, timeout=5).stdout.strip()
+    except Exception:
+        return ""
+
+
 def render_html(doc, template):
     """把题目数据注入模板的 qdata 块。模板不含任何项目内容,数据只此一处。"""
     if PLACEHOLDER not in template:
         raise ValueError(f"模板缺占位符 {PLACEHOLDER}")
+    doc = {**doc, "doc": {**doc["doc"], "code_rev": doc["doc"].get("code_rev") or code_rev()}}
     # </script> 会提前闭合数据块;JSON 里的 < 一律转义,不影响 json.loads
     payload = json.dumps(doc, ensure_ascii=False).replace("<", "\\u003c")
     return template.replace(PLACEHOLDER, payload)
@@ -995,6 +1267,9 @@ python3 scripts/build_questionnaire.py \
 - [ ] 第一部分两条，每条「对／不对」三态；选「不对」才展开说明框
 - [ ] 三道题都渲染出来；问题 1、3 带「请先答」红标；问题 2 在 layer 2 分隔条之下
 - [ ] 问题 1 依据区显示绿色 `原话` badge + `> 证据: docs/.../李姐微信语音转述.md:4 | "客户逾期了系统就提醒一下呗"`
+- [ ] 问题 4 依据区**外层只显示白话**：「我们查代码看到系统现在是这么做的：代码现在按余额是否 ≤ 0 判定已还清……（这是开发读代码得出的理解，不是您说过的话——不对请直接指出）」；`app/reminder_rules.py:18`、入口、两条分支都**折叠**在「代码位置与分支（开发看）」里
+- [ ] 问题 4 的演示数字两行（继续提醒／停止提醒）随选项点亮，且**没有**「基于开发假设的算法」那条红底提示（因为 `basis` 是 `branches`）
+- [ ] 抬头末行显示「代码依据取自 <8 位 sha> —— 这之后代码若有变动，结论需重新确认」
 - [ ] 问题 3 依据区**默认展开**、红色 `无据 · 请证伪` badge，⚠ 那段 weak 文案在里面
 - [ ] 问题 1 选 B → 展开「宽限期几天」；选回 A → 收起
 - [ ] 问题 2 选 A → 展开「达到上限后怎么办」；选 B → `after_cap` 组灰掉并盖上「因问题 2 选了 B…」
@@ -1171,6 +1446,44 @@ Create `references/questioning-rules.md`，内容是从 `templates/questionnaire
 
 无据的题**照样出**——盲区清单的价值就在问出没人想过的场景；靠公开标记加一键
 证伪控幻觉，而非禁止提问。但无据题排在同层最后。
+
+## 二之二、代码依据比原话依据要求更高（机检：logic/entry/branches）
+
+`src`（原话）和 `code`（代码）的失败模式不同，别用同一个标准。
+
+- **`src` 的风险是被改写**：`path:line + snippet` 就够——`verify_evidence.py` 能 grep 出来。
+- **`code` 的风险是单点引用冒充整体逻辑**：一行赋值不证明它是唯一赋值点、没有别处覆盖、
+  没有 flag 短路。三条全 PASS 的引用照样能让业务确认一个错误的现状——**而且是有落款的
+  错误**，比没有证据更糟。尤其危险是演示数字照这个逻辑算的：逻辑读了一半，业务就照错
+  数字选口径。
+
+所以 `code` 档每条引用额外必填三样：
+
+```json
+{"kind": "code",
+ "path": "app/reminder_rules.py", "line": 18,
+ "snippet": "if bill.balance <= 0:",
+ "logic": "代码现在按余额是否 ≤ 0 判定已还清，完全不看单子的状态字段",
+ "entry": "app/reminder_rules.py:15",
+ "branches": [
+   {"cond": "余额 ≤ 0", "then": "不再提醒", "cite": "app/reminder_rules.py:19"},
+   {"cond": "余额 > 0 且已逾期", "then": "提醒，累计发满 3 次为止", "cite": "app/reminder_rules.py:20"}],
+ "branches_exhaustive": true}
+```
+
+- **`logic`** — 一句白话说清这段代码实际做什么。**它是你对代码的解读，不是代码原文**，
+  harness 判不了它对不对。页面会写成「我们查代码看到系统现在是这么做的：…（这是开发读
+  代码得出的理解，不是您说过的话——不对请直接指出）」，把否掉的机会留给业务。
+- **`entry`** — 这段逻辑从哪个页面／接口进来。业务问的是"页面上"，没有 `entry` 他没法
+  判断"你说的是不是我天天看的那个页面"，"代码 vs 口述冲突题"也就问不准。
+- **`branches`** — 分支列表。**确实没读完就写 `branches_exhaustive: false`**，此时该题
+  `tier` 必须降为 `guess`，页面按无据题处理（标红、默认展开、给证伪出口）。不把"没读完"
+  逼成谎话，但也不让它冒充有据。
+
+演示数字必须声明来源：`demo.basis` 为 `"branches"`（照分支算的）或 `"assumed"`（你自己
+假设的算法，页面会标注"未从代码验证"）。
+
+`doc.code_rev` 由 build 自动填 HEAD——单子发出到收回可能隔几天，代码变了结论就得重新确认。
 
 ## 三、分支穷举是义务（机检：分支对称）
 
@@ -1809,6 +2122,8 @@ git commit -m "docs: 阶段二出题纪律接入 HTML 确认单，v2.6.0
 
 - **表格题**：原型里 AR 的"阻塞原因×责任部门"可编辑表格是项目专有题型，P0 的 schema 只支持单选／多选／文本。需要时另加 `groups[].kind: "table"`。
 - **JS 渲染无自动化测试**：CI 只覆盖 Python 侧。模板改动后必须人工过 Task 3 Step 6 的清单。
+- **`logic` 不受 harness 保护**：`path:line + snippet` 能被 grep 核验，但 `logic` 是开发对代码的**解读**，机器判不了它对不对。缓解只有三条：页面明写它是解读、要求列 `branches`、给业务证伪出口。
+- **`code_rev` 只记不校**：回执回来时若 `code_rev` 已不是 HEAD，说明期间代码变过，需人工判断结论是否仍成立；P0 只记录不自动比对。
 - **`kind:"receipt"` 非文件引用**：`verify_evidence.py` 仍校验不了，处置照 spec §9——回执归档进 `raw/` 后改真路径引用。
 - **P1 延后**：`verify_evidence.py` 吃 json 与禁用措辞探测、`spec-template.md` 的 Rejected 段自动产出、`blindspot-checklist.md` 逐维度判据。
 - **架构复审里另两条延后**：覆盖阈值魔数 8 与实际 12 个维度脱钩（`verify_evidence.py:110`，应改为从 checklist 动态数）；SKILL.md 拆薄壳入口（先用 skill-creator 测出触发基线再决定）。
@@ -1817,4 +2132,6 @@ git commit -m "docs: 阶段二出题纪律接入 HTML 确认单，v2.6.0
 
 **Spec 覆盖**：§4 产物清单 → Task 1/3/4/5/6；§5 schema → Task 1；§6 依赖分层与两条硬约束 → Task 1（分支对称机检）+ Task 3（layer 渲染）+ Task 4（规则文档）；§7 页面行为八条 → Task 3 Step 6 验收清单逐条对应；§8 借鉴取舍 → Task 4 的 questioning-rules.md 第五条写明与 grilling 的分界；§9 三处机检缺口 → Task 5；§10 测试 → Task 1/2/3/4/5 的测试 + Task 6 的 CI；§12 P0 范围 → 全部覆盖。
 
-**类型一致**：`validate(doc) -> list[str]`、`render_html(doc, template) -> str`、`render_md(doc) -> str`、`TEMPLATE_PATH`、`PLACEHOLDER`、`ADVICE_WORDS` 在 Task 1/3/4 间一致；`check_file` 返回值从 4 元组改 6 元组只在 Task 5 内部，`main()` 同任务同步。模板侧 `whenToDom()` 负责 schema 题号（`2=B`）到 DOM name（`q2=B`）的转换，Task 3 定义、Task 3 内自用。
+**新增覆盖**：§3 的 D15/D16/D17 → Task 1（`_check_code_cites` / `_check_demo` 与 6 个测试）+ Task 2（样例桩件与真坐标核验）+ Task 3（`citeHtml` 两层渲染、`code_rev` 自动填、`demo.basis` 标注）+ Task 4（questioning-rules 第二之二节）。
+
+**类型一致**：`validate(doc) -> list[str]`、`render_html(doc, template) -> str`、`render_md(doc) -> str`、`TEMPLATE_PATH`、`PLACEHOLDER`、`ADVICE_WORDS` 在 Task 1/3/4 间一致；`check_file` 返回值从 4 元组改 6 元组只在 Task 5 内部，`main()` 同任务同步。模板侧 `whenToDom()` 负责 schema 题号（`2=B`）到 DOM name（`q2=B`）的转换，Task 3 定义、Task 3 内自用。`_check_code_cites(ev, tier, tag)`、`_check_demo(q, ev, tag)`、`code_rev()`、`citeHtml(c)` 均在 Task 1／Task 3 内定义并调用，无跨任务悬空引用。
