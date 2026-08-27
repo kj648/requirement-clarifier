@@ -33,7 +33,9 @@ DONT_KNOW = re.compile(r'不清楚|不知道|不了解')
 DENIED = re.compile(r'^☒\s*本题不成立[^：:]*[：:]\s*(?P<why>.*)$', re.M)
 UNSIGNED = re.compile(r'未署名')
 CLASH_HEAD = re.compile(r'^##\s*⚠?\s*填写时暴露的矛盾.*?$(?P<body>.*?)(?=^##\s|\Z)', re.M | re.S)
-CLASH_ITEM = re.compile(r'^-\s+条件\s+`(?P<when>[^`]+)`', re.M)
+# 逐条矛盾的稳定锚点是导出器必写的「业务说明：」标签行,不是给业务读的人话正文
+# (人话措辞会变;条件表达式只在机读区保留)
+CLASH_ITEM = re.compile(r'^\s*业务说明[：:]', re.M)
 NO_EXPLAIN = re.compile(r'业务说明[：:]\s*（未说明）')
 
 def substantive(text: str) -> bool:

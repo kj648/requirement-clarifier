@@ -36,6 +36,20 @@ class TestChecker(unittest.TestCase):
         self.assertIn("矛盾", out)
         self.assertIn("未给说明", out)
 
+    def test_clash_count_matches_real_exporter_format(self):
+        """逐条计数要认导出器真实写出的格式 —— 旧的「- 条件 `…`」写法已不存在,
+        按人话正文解析会得到欺骗性的 0。"""
+        code, out = run("receipt-clash-unexplained.md")
+        self.assertIn("矛盾 1 处", out)
+        self.assertIn("含 1 处填写时暴露的矛盾", out)
+
+    def test_explained_clash_warns_but_passes(self):
+        """矛盾附了业务说明就只警告不拦 —— 拦的是「业务没解释」,不是「有矛盾」。"""
+        code, out = run("receipt-clash-explained.md")
+        self.assertEqual(code, 0, out)
+        self.assertIn("矛盾 1 处", out)
+        self.assertNotIn("未给说明", out)
+
 
 if __name__ == "__main__":
     unittest.main()
