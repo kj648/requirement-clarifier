@@ -7,24 +7,66 @@
 定位: 阶段三"验收答案"的机械约束部分。业务回执先过本脚本,机器报完"哪些题没答、
 缺什么落款",AI 再做判断题部分(成色分级、冲突检测、新需求剥离)。
 
-机判九件事(格式契约见 templates/questionnaire-template.md):
-1. 逐题作答检测: "### 问题 N" 块内有勾选(☑/☒/✔/✓/[x])或【作答区】有实质内容才算已答。
-   未答 → WARN;题目标注"阻塞"未答 → FAIL。
-2. 多选提示: 同题勾选 >1 项 → WARN(请确认该题是否允许多选)。
-3. "我不清楚"台阶: 勾了"不清楚/不知道"但【作答区】未给知情人 → WARN(索要真正知情人)。
-4. 第一部分核对: 三态表里「未表态」的条数 >0 → WARN(点出条数);没有三态表的手写单
-   退回兜底判据 —— 无"无异议"且【作答区】空 → WARN。
-5. 落款检查: 填写信息区的 日期 空缺 → FAIL(落款是溯源凭证);部门空缺 → WARN。
+──────────────────────────────────────────────────────────────────────
+入口分两层(为什么: 九条规则原来全按中文字面 grep —— `### 问题 N：`、`【作答区】`、
+`☒ 本题不成立`…… 一旦回执是英文的,或者 AI 应用户要求把回执翻译了,九条规则不会
+报错,只是全部不触发,静默全灭。而 HTML 导出的回执末尾本来就带一个机读 JSON 区,
+机检该优先吃它):
+
+  A. 结构化路径 —— 回执带机读 JSON 区(HTML 导出的都带)→ 按 JSON 判,语言无关。
+  B. 人读锚点路径 —— 没有机读区(手写单/旧回执)→ 走原来的中文锚点,一字不动。
+  C. 机读区存在但解析失败(被手改坏)→ 降级走 B + 一条 WARN「机读区损坏」。
+     为什么不直接 FAIL: 手改坏机读区的人多半只是在编辑器里动了正文,人读部分
+     还是好的;拦下来不如降级并说清「这次是按人读文本判的」。
+
+机读区结构(templates/questionnaire.html 的 buildReceipt() 是唯一真源):
+  {单据,轮次,代码依据,导出时间,
+   第一部分:[{条,核对,说明}],
+   题目:[{题号,阻塞,主选,子项,跳过,不成立,不适用?,补充,依据,规则引用?,独立复核?}],
+   矛盾:[{条件,说明}], 落款:{填写人,部门,导出时间,转交,已署名}}
+键名是契约,永远是中文 —— 它由模板代码写出,不随回执正文的语言变。真正会变成英文的
+是「值」(题目标题、选项 label),所以判据只许落在键和结构上,不许落在值的字面上。
+
+──────────────────────────────────────────────────────────────────────
+机判九件事,两条路径的映射:
+
+1. 逐题作答。
+   B: "### 问题 N" 块内有勾选(☑/☒/✔/✓/[x])或【作答区】有实质内容才算已答。
+   A: 主选／不成立／补充／跳过／子项／不适用 任一非空即已答。
+      为什么是这一串而不只是「主选」: 导出器把子项、跳过说明、不适用推导、补充
+      统统写进同一行【作答区】,B 路径把它们当实质内容 → 判已答。A 路径必须跟 B
+      对同一份回执给同一个结论,否则同一份中文回执在改版前后判得不一样。
+      已知代价(两条路径同担): 主选没选、只填了某个小问,也会算已答 —— 页面进度条
+      比这严(它只认主选)。这是老行为,本次不改,以免中文回执的结论悄悄变。
+   共同: 未答 → WARN;阻塞级未答 → FAIL(A 靠 `阻塞` 字段,B 靠块内出现「阻塞」二字)。
+2. 多选提示: 同题勾选 >1 项 → WARN。
+   A: 不判 —— 主选组渲染成 radio(见模板 optHtml),结构上不可能多选,机读区里
+      `主选` 也只有一个标量位置。这条规则在结构化路径下没有可判对象。
+3. "我不清楚"台阶: 勾了"不清楚/不知道"但没给知情人 → WARN(索要真正知情人)。
+   A: 判 `主选` 是否命中关键词。这里只能是关键词兜底 —— 选项 label 是自由文本,
+      英文回执写的是 "I don't know",机读区没有「这是不清楚档」的结构标记,所以
+      中英各认一组词。认不出时会漏报(不会误报),是本条已知的成色上限。
+4. 第一部分核对: 「未表态」的条数 >0 → WARN(点出条数)。
+   A: 数 `第一部分[].核对` 为空或命中「未表态/undecided」的条数。
+   B: 三态表数行;没有三态表的手写单退回兜底判据 —— 无"无异议"且【作答区】空 → WARN。
+   判据必须是数条数,不能是「这一段有没有字」—— 导出器无论核对与否都会写满该列。
+5. 落款检查: 日期空缺 → FAIL(落款是溯源凭证);部门空缺 → WARN。
+   A: `落款.导出时间` 空 → FAIL;`落款.部门` 空 → WARN;整个 `落款` 缺 → FAIL。
    空缺含导出器写的「（未填）」占位 —— 否则该告警是死规则。
 6. 模板残留: "出题规则(给生成方"未删除 → WARN(内部注释不应发给业务)。
-7. 业务证伪: `☒ 本题不成立` 单独计数并逐条列出 —— 该题需删除或重出,不得直接合并。
+   两条路径共用,对全文照跑 —— 这是中文模板自己的残留物,与回执语言无关。
+7. 业务证伪: 单独计数并逐条列出 —— 该题需删除或重出,不得直接合并。
+   A: `不成立` 非空即计数,同时算已答(不重复计入未答)。B: `☒ 本题不成立` 行。
 8. 未署名: 填写人为空或含「未署名」→ WARN + 声明须按【开发拟定·待追认】入账
    (落款可留空是刻意的:业务常需先交一半再转交;纪律靠标签降级而非拦截)。
-9. 矛盾段: 存在「填写时暴露的矛盾」→ WARN;其中未附业务说明的 → FAIL(必须回问,不得自行选一边)。
+   A: 另认 `落款.已署名 === false` —— 它是导出器写死的布尔,比字面更可靠。
+9. 矛盾段: 存在矛盾 → WARN;其中未附业务说明的 → FAIL(必须回问,不得自行选一边)。
+   A: 数 `矛盾[]` 长度;`说明` 去掉括号占位后为空即「未说明」。用结构而非字面 ——
+      英文导出会写 "(not explained)",占位词中英各认一组。
 
-存在 FAIL → 退出码 1。
+两条路径共用同一套输出与摘要格式(check_file 的 6 元组签名不变),存在 FAIL → 退出码 1。
 """
-import re, sys
+import json, re, sys
 from pathlib import Path
 
 CHECKED = re.compile(r'[☑☒✔✓]|\[[xX]\]')
@@ -46,6 +88,15 @@ NO_EXPLAIN = re.compile(r'业务说明[：:]\s*（未说明）')
 #   未勾选的 ☐ 未表态,会让每份没动过的单子都误报)。
 # 判据必须是数条数,不能是「这一段有没有字」—— 导出器无论核对与否都会把该列写满。
 P1_MUTE_ROW = re.compile(r'^\|[^|\n]*\|\s*未表态\s*\||[☑✔✓]\s*未表态', re.M)
+
+# ── 结构化路径:值一侧不得不做的关键词兜底(见 docstring 规则 3／4／9) ────────
+JSON_FENCE = re.compile(r'^```[ \t]*json[ \t]*\r?\n(?P<body>.*?)^```[ \t]*$', re.M | re.S)
+J_MUTE = re.compile(r'未表态|undecided|not\s+stated|no\s+position', re.I)
+J_DONT_KNOW = re.compile(r"不清楚|不知道|不了解|don'?t\s+know|do\s+not\s+know"
+                         r"|not\s+sure|no\s+idea|unclear", re.I)
+J_PLACEHOLDER = re.compile(r'未说明|未填|未写|待补|not\s+explained|no\s+explanation'
+                           r'|not\s+specified|n/?a|tbd|unknown', re.I)
+
 
 def substantive(text: str) -> bool:
     """作答区内容去掉模板占位(<...>、下划线)后是否还有实质内容。"""
@@ -73,15 +124,142 @@ def field_value(section: str, key: str) -> str:
     # 两条路径(手写空落款 / HTML 导出无署名)最终触发同一条 WARN。
     return "" if v in ("（未填）", "(未填)") else v
 
-def check_file(fp: str):
-    text = Path(fp).read_text(encoding="utf-8", errors="replace")
-    lines = text.splitlines()
-    warns, fails = [], []
-    print(f"\n== 机检 {fp} ==")
 
-    if "出题规则(给生成方" in text or "出题规则（给生成方" in text:
-        warns.append("模板内部注释『出题规则(给生成方…)』未删除,不应出现在发给业务的正式单里")
+# ══ 机读区 ══════════════════════════════════════════════════════════
+def machine_block(text: str):
+    """从回执里取机读区。返回 (J, broken)。
 
+    - J 是解析出来的 dict,None 表示没有可用的机读区;
+    - broken=True 表示「有 json 围栏但解析不出来」→ 调用方降级走锚点路径并告警。
+
+    检测本身必须语言无关: 认的是 ```json 围栏 + 中文键(键由模板代码写出,不随
+    回执语言变),不认那句「机读区（供 …解析）」注释 —— 注释是人话,会被翻译掉。
+    从后往前找:导出器把机读区写在文件末尾,而正文里可能另有无关的 json 代码块。
+    解析得出但不像回执(没有 题目／落款 键)的块视为「别人的 json」,静默跳过,
+    不报「损坏」—— 手写单里贴段配置不该触发本脚本的告警。
+    """
+    broken = False
+    for m in reversed(list(JSON_FENCE.finditer(text))):
+        try:
+            obj = json.loads(m.group("body"))
+        except (ValueError, TypeError):
+            broken = True
+            continue
+        if isinstance(obj, dict) and ("题目" in obj or "落款" in obj):
+            return obj, False
+    return None, broken
+
+
+def _blank(v) -> bool:
+    """JSON 字段是否算空 —— null／空串／纯括号占位都算。
+
+    判据是结构(剥掉括号后还剩不剩东西)+ 中英各一组占位词,不是某句中文字面:
+    导出器写「（未说明）」「（未填）」,英文回执常写 "(not explained)"。
+    """
+    if v is None: return True
+    if isinstance(v, (list, dict)): return not v
+    s = re.sub(r'^[（(\[【]+\s*|\s*[)）\]】]+$', '', str(v).strip()).strip()
+    return not s or bool(J_PLACEHOLDER.fullmatch(s))
+
+
+def _filled(rec: dict, key: str) -> bool:
+    return not _blank(rec.get(key))
+
+
+def _extra(rec: dict) -> bool:
+    """主选以外还有没有实质内容 —— 子项／跳过／不适用／补充。
+
+    对应 B 路径里【作答区】那一行的其余部分:导出器把这四类东西拼进同一行,
+    所以两条路径必须一起认,否则同一份中文回执改版前后判得不一样。
+    """
+    return any(_filled(rec, k) for k in ("子项", "跳过", "不适用", "补充"))
+
+
+def _titles(text: str) -> dict:
+    """题号→标题,只为把告警里的题号变得好认;判定一律来自机读区。
+
+    英文回执认不出这个中文锚点 → 退化成只报题号,不影响任何结论。
+    """
+    out = {}
+    for line in text.splitlines():
+        m = QHEAD.match(line.strip())
+        if m: out[str(m["no"])] = m["title"]
+    return out
+
+
+def check_json(J: dict, text: str, warns: list, fails: list):
+    """结构化路径:九条规则的 JSON 映射(逐条理由见模块 docstring)。"""
+    titles = _titles(text)
+    def unanswered_msg(no, blocking):
+        t = titles.get(str(no), "")
+        head = f"问题 {no}『{t[:30]}』未作答" if t else f"问题 {no} 未作答"
+        return head + ("(阻塞级)" if blocking else "")
+
+    # 4. 第一部分核对
+    p1 = J.get("第一部分") or []
+    if isinstance(p1, list) and p1:
+        n_mute = sum(1 for r in p1 if isinstance(r, dict)
+                     and (_blank(r.get("核对")) or J_MUTE.search(str(r.get("核对")))))
+        if n_mute:
+            warns.append(f"第一部分有 {n_mute} 条『未表态』—— 这些条目不得视为业务已认可,"
+                         f"须逐条核对完再入账(导出器无论核对与否都会写满该列,"
+                         f"只看『有没有字』永远查不出没核对)")
+
+    # 1、3、7. 逐题
+    qs = J.get("题目") or []
+    if not isinstance(qs, list): qs = []
+    unanswered, denied = [], []
+    for rec in qs:
+        if not isinstance(rec, dict): continue
+        no = rec.get("题号", "?")
+        blocking = bool(rec.get("阻塞"))
+        answered = (_filled(rec, "主选") or _filled(rec, "不成立") or _extra(rec))
+        if not answered:
+            unanswered.append((no, blocking))
+            (fails if blocking else warns).append(unanswered_msg(no, blocking))
+        main = "" if _blank(rec.get("主选")) else str(rec["主选"])
+        if main and J_DONT_KNOW.search(main) and not _extra(rec):
+            warns.append(f"问题 {no} 勾了『不清楚』但作答区未提供知情人,请索要真正知情人")
+        if _filled(rec, "不成立"):
+            why = str(rec["不成立"]).strip()
+            denied.append((no, why))
+            warns.append(f"问题 {no} 被业务判为不成立：{why[:40]}"
+                         f" —— 该题需删除或重出,不得直接合并")
+    if not qs:
+        warns.append("机读区里没有任何题目 —— 回执结构与模板不符,机检未覆盖,请人工核对")
+
+    # 5、8. 落款
+    sign = J.get("落款")
+    if isinstance(sign, dict):
+        name = sign.get("填写人")
+        if (sign.get("已署名") is False or _blank(name)
+                or UNSIGNED.search(str(name or ""))):
+            warns.append("回执未署名 —— 不得记为【业务确认】,须按【开发拟定·待追认】入账,"
+                         "补落款后才能转正")
+        if _blank(sign.get("导出时间")):
+            fails.append("落款缺『日期』(导出时自动填入,缺失说明回执被手改过)")
+        if _blank(sign.get("部门")):
+            warns.append("落款缺『部门』")
+    else:
+        fails.append("缺少『## 填写信息』落款区 —— 无落款的回答不得标【业务确认】")
+
+    # 9. 矛盾
+    clashes = J.get("矛盾") or []
+    if not isinstance(clashes, list): clashes = []
+    n_clash = len(clashes)
+    if n_clash:
+        warns.append(f"回执含 {n_clash} 处填写时暴露的矛盾,须优先处理")
+        n_mute_clash = sum(1 for c in clashes
+                           if not isinstance(c, dict) or _blank(c.get("说明")))
+        if n_mute_clash:
+            fails.append(f"{n_mute_clash} 处矛盾业务未给说明 —— 必须回问,不得自行选一边")
+
+    return len(qs), len(unanswered), len(denied), n_clash
+
+
+# ══ 人读锚点路径(兼容层,判据一字不动)══════════════════════════════════
+def check_anchors(text: str, warns: list, fails: list):
+    """没有机读区的手写单/旧回执走这里。中文锚点判据保持原样,不得改动。"""
     # 切分区段
     def section(name):
         m = re.search(rf'^##\s*{name}.*?$(.*?)(?=^##\s|\Z)', text, re.M | re.S)
@@ -156,10 +334,35 @@ def check_file(fp: str):
         if n_mute:
             fails.append(f"{n_mute} 处矛盾业务未给说明 —— 必须回问,不得自行选一边")
 
+    return n_q, len(unanswered), len(denied), n_clash
+
+
+def check_file(fp: str):
+    text = Path(fp).read_text(encoding="utf-8", errors="replace")
+    warns, fails = [], []
+    print(f"\n== 机检 {fp} ==")
+
+    J, broken = machine_block(text)
+    if J is not None:
+        print("  · 按机读区判(结构化,与回执语言无关)")
+
+    # 6. 模板残留 —— 两条路径共用:这是中文模板自己的残留物,与回执语言无关
+    if "出题规则(给生成方" in text or "出题规则（给生成方" in text:
+        warns.append("模板内部注释『出题规则(给生成方…)』未删除,不应出现在发给业务的正式单里")
+
+    if broken:
+        warns.append("机读区损坏(```json 块解析失败)—— 已按人读文本机检,"
+                     "结论可能不全;请重新从 HTML 确认单导出一份")
+
+    if J is not None:
+        n_q, n_un, n_den, n_clash = check_json(J, text, warns, fails)
+    else:
+        n_q, n_un, n_den, n_clash = check_anchors(text, warns, fails)
+
     for msg in fails: print(f"  ✗ {msg}")
     for msg in warns: print(f"  △ {msg}")
     if not fails and not warns: print("  ✓ 全部题目已作答,落款完整")
-    return n_q, len(unanswered), len(denied), n_clash, warns, fails
+    return n_q, n_un, n_den, n_clash, warns, fails
 
 def main():
     if len(sys.argv) < 2:

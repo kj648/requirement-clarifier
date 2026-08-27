@@ -1067,7 +1067,10 @@ function buildReceipt(){
 
   QS.forEach(q=>{
     const no=q.dataset.no, off=denied(q);
-    const rec={题号:no, 主选:null, 子项:{}, 跳过:[], 不成立:null, 补充:'', 依据:[]};
+    /* 阻塞 必须写进机读区:check_questionnaire.py 的结构化路径靠它判「阻塞级未答 → FAIL」。
+       缺这个字段时机检只能降级成一律 WARN —— 不报错,只是拦不住人,是静默失效。 */
+    const rec={题号:no, 阻塞:!!q.dataset.first, 主选:null, 子项:{}, 跳过:[],
+               不成立:null, 补充:'', 依据:[]};
     q.querySelectorAll('.ev code').forEach(c=>rec.依据.push(c.textContent.replace(/^&gt; ?/,'')));
     const _ev = (DATA.questions.find(x=>String(x.no)===no)||{}).evidence || {};
     if(_ev.rules_ref) rec.规则引用 = _ev.rules_ref;

@@ -1,4 +1,4 @@
-import subprocess, sys, unittest
+import re, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +88,117 @@ class TestChecker(unittest.TestCase):
         r = subprocess.run([sys.executable, str(SCRIPT), str(f)],
                            capture_output=True, text=True)
         self.assertNotIn("『未表态』", r.stdout, r.stdout)
+
+
+class TestStructuredPathIsPreferred(unittest.TestCase):
+    """P0 结构化优先:九条规则原来全按中文字面 grep,回执一换语言就静默全灭 ——
+    不报错,只是九条规则全部不触发。机检必须优先吃 HTML 导出自带的机读 JSON 区。
+
+    fixture 的机读区取自模板 buildReceipt() 的真实输出(浏览器里对同一份出包页面
+    实跑一次拿到的),不是照 docstring 手抄的 —— 手抄会把「模板真实写出什么」和
+    「机检以为模板写什么」变成两份真源。"""
+
+    def test_zh_receipt_is_judged_by_the_machine_block(self):
+        code, out = run("receipt-json-zh.md")
+        self.assertEqual(code, 1, out)
+        self.assertIn("按机读区判", out)
+        self.assertIn("未作答(阻塞级)", out)                 # 规则 1
+        self.assertIn("第一部分有 1 条『未表态』", out)        # 规则 4
+        self.assertIn("判为不成立 1 道", out)                 # 规则 7
+        self.assertIn("回执未署名", out)                      # 规则 5／8
+        self.assertIn("待追认", out)
+        self.assertIn("1 处矛盾业务未给说明", out)            # 规则 9
+
+    def test_the_human_readable_half_of_that_receipt_would_have_passed(self):
+        """同一份 fixture 的人读部分被故意写成「全部已答、矛盾已解释、已署名」:
+        抽掉机读区就 0 FAIL 放行。上一条测试的两个 FAIL 只可能来自机读区 ——
+        这才证明走的是结构化路径,而不是碰巧被锚点路径判对了。"""
+        body = re.sub(r'```json.*?```', '',
+                      (FIX / "receipt-json-zh.md").read_text(encoding="utf-8"),
+                      flags=re.S)
+        f = Path(tempfile.mkdtemp()) / "no-machine-block.md"
+        f.write_text(body, encoding="utf-8")
+        p = subprocess.run([sys.executable, str(SCRIPT), str(f)],
+                           capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertNotIn("未作答", p.stdout)
+        self.assertNotIn("未给说明", p.stdout)
+        self.assertNotIn("未署名", p.stdout)
+
+    def test_english_receipt_still_triggers_the_rules(self):
+        """本次任务的验收核心:全英文回执(结构词、选项 label 全英文)不再静默通过。"""
+        code, out = run("receipt-json-en.md")
+        self.assertEqual(code, 1, out)
+        self.assertIn("问题 1 未作答(阻塞级)", out)           # 1 阻塞级未答 → FAIL
+        self.assertIn("问题 2 勾了『不清楚』", out)            # 3 英文 "I don't know"
+        self.assertIn("第一部分有 2 条『未表态』", out)        # 4 undecided + 空 都算
+        self.assertIn("判为不成立 1 道", out)                 # 7 证伪
+        self.assertIn("回执未署名", out)                      # 8
+        self.assertIn("落款缺『部门』", out)                   # 5
+        self.assertIn("1 处矛盾业务未给说明", out)            # 9 "(not explained)"
+        self.assertIn("题目 4 道", out)
+        # 锚点路径的两条兜底告警不得出现 —— 出现就说明没走结构化路径
+        self.assertNotIn("未识别到任何", out)
+        self.assertNotIn("缺少『## 填写信息』落款区", out)
+
+    def test_anchor_path_alone_sees_nothing_in_that_english_receipt(self):
+        """要修的缺口本身立一条护栏:同一份英文回执抽掉机读区,锚点路径一条实质
+        规则都不触发(题目 0 道,只剩「机检未覆盖」的兜底)。谁把结构化路径退回去,
+        上一条测试红、这一条仍绿 —— 两条一起读才说得清是哪种失效。"""
+        body = re.sub(r'```json.*?```', '',
+                      (FIX / "receipt-json-en.md").read_text(encoding="utf-8"),
+                      flags=re.S)
+        f = Path(tempfile.mkdtemp()) / "en-anchor-only.md"
+        f.write_text(body, encoding="utf-8")
+        p = subprocess.run([sys.executable, str(SCRIPT), str(f)],
+                           capture_output=True, text=True)
+        self.assertIn("题目 0 道", p.stdout)
+        self.assertIn("机检未覆盖", p.stdout)
+
+    def test_broken_machine_block_degrades_to_the_anchor_path(self):
+        """机读区被手改坏 → 降级走锚点 + 一条 WARN 说清「这次是按人读文本判的」。
+        坏了就静默不判,比没有机读区更危险。"""
+        code, out = run("receipt-json-broken.md")
+        self.assertEqual(code, 0, out)
+        self.assertIn("机读区损坏", out)
+        self.assertIn("已按人读文本机检", out)
+        self.assertNotIn("按机读区判", out)
+        self.assertIn("题目 2 道 / 未答 0 道", out)   # 锚点路径照常把两道题读出来
+
+    def test_receipts_without_a_machine_block_take_the_anchor_path(self):
+        """兼容层:无机读区的手写单/旧回执一律走原来的中文锚点,判据一字未动。
+        (这些 fixture 的逐条结论由本文件上半部分的既有测试盯着,改前改后逐字节一致。)"""
+        targets = [p for p in FIX.glob("receipt-*.md") if "json" not in p.name]
+        targets.append(ROOT / "examples/demo-project/docs/requirements/raw"
+                              "/2026-07-14-确认单v1-回执.md")
+        self.assertGreaterEqual(len(targets), 8)
+        for p in targets:
+            J, broken = cq.machine_block(p.read_text(encoding="utf-8"))
+            self.assertIsNone(J, p.name)
+            self.assertFalse(broken, p.name)
+
+    def test_unrelated_json_block_is_not_mistaken_for_the_machine_block(self):
+        """手写单里贴一段配置 json 不该被当成机读区,也不该报「损坏」——
+        认的是中文键(题目／落款),不是「有没有 json 围栏」。"""
+        self.assertEqual(cq.machine_block('正文\n```json\n{"foo": 1}\n```\n'),
+                         (None, False))
+
+    def test_placeholder_and_empty_explanations_both_count_as_unexplained(self):
+        """判「空或占位」用结构(剥掉括号后还剩不剩东西)+ 中英各一组占位词:
+        导出器写 `""`／「（未说明）」,英文回执常写 "(not explained)"。"""
+        for v in (None, "", "   ", "（未说明）", "(not explained)", "（未填）", "N/A"):
+            self.assertTrue(cq._blank(v), repr(v))
+        for v in ("财务说照批准金额打", "finance confirmed it", "0"):
+            self.assertFalse(cq._blank(v), repr(v))
+
+
+class TestTemplateExportsTheBlockingFlag(unittest.TestCase):
+    """机读区不写 `阻塞` → 结构化路径判不出「阻塞级未答 → FAIL」,只会一律降成
+    WARN:不报错,只是拦不住人。这类缺口必须有机检闸门,不能靠人记得。"""
+
+    def test_build_receipt_writes_the_blocking_flag_into_the_machine_block(self):
+        html = (ROOT / "templates" / "questionnaire.html").read_text(encoding="utf-8")
+        self.assertIn("阻塞:!!q.dataset.first", re.sub(r"\s+", "", html))
 
 
 class TestFieldValueDoesNotCrossFieldBoundaries(unittest.TestCase):
