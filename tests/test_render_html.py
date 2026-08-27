@@ -79,6 +79,31 @@ class TestRenderHtml(unittest.TestCase):
         for gone in ("回填期限", "due_days", "个工作日"):
             self.assertNotIn(gone, self.tpl, f"期限残留: {gone}")
 
+    def test_type_scale_is_tokenised(self):
+        """字号必须走 7 级字阶 token，不许再散落字面值。"""
+        for tok in ("--t-title", "--t-h2", "--t-q", "--t-body",
+                    "--t-sub", "--t-cap", "--t-label"):
+            self.assertIn(tok, self.tpl, f"缺字阶 token: {tok}")
+
+    def test_space_scale_is_tokenised(self):
+        for tok in ("--s-1", "--s-2", "--s-3", "--s-4", "--s-6", "--s-8"):
+            self.assertIn(tok, self.tpl, f"缺间距 token: {tok}")
+
+    def test_na_group_no_longer_uses_overlay(self):
+        """自动不适用改写形态，不再用 93% 遮罩压住正文。"""
+        self.assertNotIn("rgba(244,247,241,.93)", self.tpl)
+        self.assertIn(".grp.na .na-note", self.tpl)
+
+    def test_print_bumps_body_to_12pt(self):
+        """15px 在纸上只有 11.25pt，低于印刷正文下限。"""
+        m = re.search(r"@media print\{(.*?)\n\}", self.tpl, re.S)
+        self.assertIsNotNone(m)
+        self.assertIn("16px", m.group(1))
+
+    def test_print_avoids_breaking_questions(self):
+        m = re.search(r"@media print\{(.*?)\n\}", self.tpl, re.S)
+        self.assertIn("break-inside:avoid", m.group(1).replace(" ", ""))
+
 
 if __name__ == "__main__":
     unittest.main()
