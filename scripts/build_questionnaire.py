@@ -279,18 +279,24 @@ def render_md(doc):
                  + ("（阻塞）" if q.get("blocking") else ""))
         if q.get("background"):
             L.append(f"背景：{q['background']}")
-        for g in q["groups"]:
-            if g["id"] != "main":
-                L.append(f"子问 · {g.get('ask', '')}：")
-            for o in g["options"]:
-                key = f"{o['key']}. " if re.fullmatch(r"[A-Z]\d*", str(o["key"])) else ""
-                mark = "⊘ " if o.get("kind") == "nonexistent" else ""
-                cost = f"（{o['cost']}）" if q.get("advice_allowed") and o.get("cost") else ""
-                L.append(f"☐ {key}{mark}{o['label']}{cost}")
+        # 只有主问给勾选框：一题一个勾选标记,否则 check_questionnaire.py 判为多选。
+        main = next((g for g in q["groups"] if g.get("id") == "main"), None)
+        for o in (main or {}).get("options", []):
+            key = f"{o['key']}. " if re.fullmatch(r"[A-Z]\d*", str(o["key"])) else ""
+            mark = "⊘ " if o.get("kind") == "nonexistent" else ""
+            cost = f"（{o['cost']}）" if q.get("advice_allowed") and o.get("cost") else ""
+            L.append(f"☐ {key}{mark}{o['label']}{cost}")
         L.append("☐ 都不是——我要选的不在这几个里（请在作答区写明实际口径）")
         for r in q.get("reveal", []):
             L.append(f"（若选 {r['when']}，请在作答区一并回答：{r['ask']}）")
-        L += ["【作答区】", ""]
+        L.append("【作答区】")
+        # 子问不发勾选框,改成作答区里的提示行 —— 选项以「／」列出,信息不丢。
+        for g in q["groups"]:
+            if g.get("id") == "main":
+                continue
+            menu = "／".join(o["label"] for o in g.get("options", []))
+            L.append(f"　· {g.get('ask', '该小问')}（{menu}／都不是，请写明）：")
+        L.append("")
 
     L += ["## 填写信息",
           "填写人：____　部门：____　日期：____",

@@ -50,6 +50,36 @@ class TestRenderMd(unittest.TestCase):
         """md 是给业务填的,依据引用含代码路径,不放进去。"""
         self.assertNotIn("> 证据:", self.md)
 
+    def test_only_main_group_gets_checkboxes(self):
+        """一题只允许一个勾选标记 —— 子问发独立勾选框会让机检判为多选。"""
+        for blk in self.md.split("### 问题 ")[1:]:
+            body = blk.split("【作答区】")[0]
+            self.assertNotIn("子问", body, f"子问不该出现在勾选区：{blk[:40]}")
+        self.assertIn("　· 达到上限后还没还，怎么办（", self.md)
+
+    def test_filled_md_passes_checker_without_multiselect_warning(self):
+        """把生成的 md 填一份丢给真实机检,不该出现『勾选了 N 项』。"""
+        import re as _re, subprocess, sys as _sys, tempfile
+        from pathlib import Path as _P
+        out, ticked = [], False
+        for line in self.md.splitlines():
+            if line.startswith("### 问题 "):
+                ticked = False
+            if not ticked and line.startswith("☐ "):
+                out.append("☑ " + line[2:]); ticked = True
+                continue
+            out.append(line)
+        text = "\n".join(out).replace(
+            "填写人：____　部门：____　日期：____",
+            "填写人：王芳　部门：财务部　日期：2026-07-14")
+        f = _P(tempfile.mkdtemp()) / "r.md"
+        f.write_text(text, encoding="utf-8")
+        p = subprocess.run(
+            [_sys.executable, str(ROOT / "scripts" / "check_questionnaire.py"), str(f)],
+            capture_output=True, text=True)
+        self.assertNotIn("勾选了", p.stdout, p.stdout)
+        self.assertEqual(p.returncode, 0, p.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
