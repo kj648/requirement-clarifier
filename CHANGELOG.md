@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.8.0] - 2026-08-28
+
+**英文产出落地（#1 收尾）。** `doc.lang: "zh" | "en"`——页面外壳与 md 骨架走同一份
+locale 表（`scripts/i18n.py`，189 键 ×2），题目内容本就由 AI 按交互语言写入 json。
+协议层（机读区键名、三档标签）不翻译。英文确认单浏览器实测 CJK 计数为 0。
+
+**机检语义化收口。** 选项 `kind`（dontknow/nonexistent/other）随回执导出，规则 3 与
+「需要下一轮」信号从关键词猜测变结构判定；`第一部分[].核对` 导出机器枚举 ok/no/mute
+（规则 4 语言无关）；md 末尾附锚点表——checker 据表把英文结构词归一为中文规范词后跑
+原判据，中文是恒等映射（正文一字不变，有测试焊死）；锚点表被手改坏时降级为恒等映射
+并告警，不再崩溃。
+
+**schema 双真源焊死。** `questionnaire.schema.json` 的 required 与 `validate()` 的
+`DOC_FIELDS`/`Q_FIELDS` 用测试锁定，分叉即红。
+
+**License：PolyForm NC → MIT。** README 加十秒版 Before/After，模式表分核心/进阶，
+Topics 增至 14。
+
 ## [2.7.0] - 2026-08-28
 
 **回执机检结构化优先（多语言的地基）。** HTML 导出的回执自带机读 JSON 区，机检现在优先按
