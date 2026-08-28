@@ -6,7 +6,7 @@ A requirement engineering workflow for AI coding agents — Claude Code, OpenCod
 
 [![CI](https://github.com/kj648/requirement-clarifier/actions/workflows/ci.yml/badge.svg)](https://github.com/kj648/requirement-clarifier/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kj648/requirement-clarifier)](https://github.com/kj648/requirement-clarifier/releases)
-[![License: PolyForm NC](https://img.shields.io/badge/license-PolyForm%20NC-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **[中文文档 →](README.zh-CN.md)** · currently the generated artifacts (questionnaires, specs) are in Chinese — English output is [on the roadmap](https://github.com/kj648/requirement-clarifier/issues/1).
 
@@ -146,4 +146,4 @@ Interview-your-plan skills (grill-me, brainstorming, …) interrogate **you, the
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal, internal, and non-commercial use. Contact the author for commercial licensing.
+[MIT](LICENSE) — use it anywhere, commercial workflows included.

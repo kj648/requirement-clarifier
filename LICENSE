@@ -1,73 +1,21 @@
-PolyForm Noncommercial License 1.0.0
+MIT License
 
-https://polyformproject.org/licenses/noncommercial/1.0.0/
+Copyright (c) 2026 KJ (kj648)
 
-Acceptance
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-In order to get any license under these terms, you must agree to them as both
-strict obligations and conditions to all your licenses.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Copyright License
-
-The licensor grants you a copyright license for the software to do everything
-you might do with the software that would otherwise infringe the licensor's
-copyright in it for any permitted purpose. However, you may only distribute
-modifications or new works based on the software according to Distribution
-License, and you may only make the software available for the public to use
-according to Noncommercial Purpose.
-
-Distribution License
-
-The licensor grants you an additional copyright license to distribute copies of
-the software and to make the software available for the public to use. However,
-you may only distribute the software or make it available for the public to use
-if you do so for Noncommercial Purpose.
-
-Noncommercial Purpose
-
-Noncommercial purposes include any use that is not a commercial advantage or
-private monetary compensation. Noncommercial purposes also include using the
-software, modifications, or new works based on the software for your own
-internal use, research, education, and personal projects.
-
-The following are not Noncommercial Purposes. They require a separate commercial
-license from the licensor:
-
-1.  providing the software as a paid service or product;
-2.  using the software to provide a commercial service or in a commercial
-    workflow;
-3.  redistributing the software as part of a commercial product or offering;
-4.  any use primarily intended for or directed toward commercial advantage or
-    private monetary compensation.
-
-Patent License
-
-The licensor grants you a patent license for the software that covers patent
-claims the licensor can license, or becomes able to license, to the extent
-necessary to make, have made, use, sell, offer for sale, import, or have
-imported the software. However, this patent license does not apply to any
-changes you make or any new works you create based on the software. You may not
-use the software to infringe anyone else's patents.
-
-Fair Use
-
-You may have fair use rights under copyright law. These terms do not limit
-those rights.
-
-Distribution: General Conditions
-
-You may distribute the software to others only under the terms of this license.
-You may not distribute the software under any other terms. You must keep all
-notices of this license and copyright intact.
-
-Liability
-
-As far as the law allows, the software comes as is, without any warranty or
-condition, and the licensor will not be liable to anyone for any damages
-related to the software or this license, under any kind of legal claim.
-
-Definitions
-
-- "licensor" refers to the copyright holder of the software.
-- "software" refers to the software and any modifications or new works based on
-  the software provided to you under this license.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

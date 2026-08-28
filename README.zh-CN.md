@@ -185,7 +185,7 @@ python3 scripts/verify_evidence.py <产出文件> --root .
 
 ## 许可证
 
-[PolyForm Noncommercial 1.0.0](LICENSE)。允许学习、修改、个人与内部使用；**禁止商用**。商用授权请联系作者。
+[MIT](LICENSE)。个人、团队、商业工作流均可自由使用。
 
 ## 贡献
 
