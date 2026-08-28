@@ -326,8 +326,15 @@ def canonicalize(text: str, anchors: dict) -> str:
     全文无差别替换:题目内容是自由文本,英文里 "Question"/"blocking" 也可能出现在
     正文中,盲替会改坏业务写的话。误伤的方向也是保守的 —— 多认出一个「阻塞」只会
     让漏答从 WARN 升成 FAIL,不会放人过去。
+
+    `anchors` 不是 dict(被手改成字符串/列表,或 AI 重出时写错类型)一律当没有锚点表
+    处理 —— md 这一路的定位就是「手填、可能被改坏」,机读区 JSON 整个坏掉都只是降级
+    加一条 WARN,没有道理唯独锚点表的类型错误让 CLI 整个 traceback 崩掉。告警由调用方
+    出(见 check_file),这里只负责不抛。
     """
-    a = {k: str((anchors or {}).get(k) or v) for k, v in CANON.items()}
+    if not isinstance(anchors, dict):
+        anchors = {}
+    a = {k: str(anchors.get(k) or v) for k, v in CANON.items()}
     if a == CANON:
         return text
     out = []
@@ -453,7 +460,12 @@ def check_file(fp: str):
         form = md_form(text)
         if form is not None:
             print("  · 按 md 表单机读区的锚点表归一后判(答案在人读文本里)")
-            text = canonicalize(text, form.get("锚点"))
+            anchors = form.get("锚点")
+            if not isinstance(anchors, dict):
+                warns.append("机读区的锚点表损坏(不是对象)—— 已按中文规范词判定,"
+                             "若这是一份非中文的单子,结论会不全;"
+                             "请重新出一份 md")
+            text = canonicalize(text, anchors)
         n_q, n_un, n_den, n_clash = check_anchors(text, warns, fails)
         declared = form.get("题") if isinstance(form, dict) else None
         if isinstance(declared, list) and declared and n_q != len(declared):

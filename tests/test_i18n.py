@@ -235,6 +235,85 @@ class TestEnglishMdGoesThroughTheChecker(unittest.TestCase):
         self.assertIn("机读区声明本单共 4 题", out, out)
 
 
+class TestBrokenAnchorTableDegradesInsteadOfCrashing(unittest.TestCase):
+    """md 这一路的定位就是「手填、可能被改坏」。机读区 JSON 整个坏掉都只降级加一条
+    WARN,没有道理唯独 `锚点` 的**类型**错误让 CLI 整个 traceback 崩掉 ——
+    `(anchors or {}).get(...)` 对字符串/列表抛 AttributeError,而 check_file() 不捕获。
+
+    既有测试只盖了「取值错位」(锚点写得不对,归一结果不对),没盖「类型损坏」。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.md = bq.render_md(json.loads(EN_JSON.read_text(encoding="utf-8")))
+
+    def _with_anchor(self, value):
+        """把 md 末尾机读区的 `锚点` 换成 value;value 为 KeyError 时整个删掉该键。"""
+        m = re.search(r'^```[ \t]*json[ \t]*\r?\n(.*?)^```', self.md, re.M | re.S)
+        obj = json.loads(m.group(1))
+        if value is KeyError:
+            obj.pop("锚点")
+        else:
+            obj["锚点"] = value
+        return self.md[:m.start(1)] + json.dumps(obj, ensure_ascii=False) + "\n" \
+            + self.md[m.end(1):]
+
+    @staticmethod
+    def _body(out):
+        """去掉带临时路径的抬头行,只留结论。"""
+        return "\n".join(l for l in out.split("\n") if not l.startswith("== 机检 "))
+
+    MALFORMED = {"字符串": "被手改坏了", "列表": ["问题", "作答区"], "数字": 42,
+                 "空字符串": "", "键整个没了": KeyError}
+
+    def test_no_traceback(self):
+        for name, v in self.MALFORMED.items():
+            with self.subTest(name):
+                code, out = _check(self._with_anchor(v))
+                self.assertNotIn("Traceback", out, out)
+                self.assertNotIn("AttributeError", out, out)
+                # 崩溃时 stdout 是空的、退出码是 1;这里要的是「跑完了」
+                self.assertIn("== 摘要 ==", out, out)
+
+    def test_the_damage_is_reported(self):
+        """静默降级比崩溃更危险 —— 得说清「这次是按中文规范词判的」。"""
+        for name, v in self.MALFORMED.items():
+            with self.subTest(name):
+                _, out = _check(self._with_anchor(v))
+                self.assertIn("锚点表损坏", out, out)
+
+    def test_every_malformed_shape_lands_on_the_same_verdict(self):
+        """类型坏掉 ≡ 锚点表整个没有 ≡ 空表:都退化成恒等映射(按中文规范词判)。
+        三种畸形给出三种不同结论的话,业务/开发看到的诊断就取决于坏的方式。"""
+        base = self._body(_check(self._with_anchor(KeyError))[1])
+        for name, v in self.MALFORMED.items():
+            with self.subTest(name):
+                self.assertEqual(self._body(_check(self._with_anchor(v))[1]), base)
+
+    def test_a_chinese_sheet_survives_the_same_damage_with_its_verdict_intact(self):
+        """中文单子的锚点表本来就是恒等映射 —— 表坏掉不该改变任何结论,
+        只多那一条「锚点表损坏」的提示。"""
+        zh = bq.render_md(json.loads(ZH_JSON.read_text(encoding="utf-8")))
+        m = re.search(r'^```[ \t]*json[ \t]*\r?\n(.*?)^```', zh, re.M | re.S)
+        obj = json.loads(m.group(1)); obj["锚点"] = "被手改坏了"
+        broken = zh[:m.start(1)] + json.dumps(obj, ensure_ascii=False) + "\n" + zh[m.end(1):]
+        good_code, good = _check(zh)
+        bad_code, bad = _check(broken)
+        verdicts = lambda out: [l for l in out.split("\n")
+                                if l.strip().startswith(("✗", "△"))]
+        self.assertEqual(bad_code, good_code)
+        self.assertEqual([l for l in verdicts(bad) if "锚点表损坏" not in l],
+                         verdicts(good))
+        # 摘要里的 WARN 数只该多出那一条,不多不少
+        n = lambda out: int(re.search(r"/ (\d+) WARN", out).group(1))
+        self.assertEqual(n(bad), n(good) + 1)
+
+    def test_canonicalize_itself_returns_the_text_untouched(self):
+        for v in ("坏了", ["a"], 42, None, 0):
+            with self.subTest(repr(v)):
+                self.assertEqual(cq.canonicalize(self.md, v), self.md)
+
+
 class TestRealEnglishReceipt(unittest.TestCase):
     """fixture 取自浏览器里对 tests/fixtures/questionnaire-en.json 的真实出包页面
     实跑一次 buildReceipt() 的输出,不是照 docstring 手抄的 —— 手抄会把「模板真实
