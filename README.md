@@ -8,7 +8,7 @@ A requirement engineering workflow for AI coding agents — Claude Code, OpenCod
 [![Release](https://img.shields.io/github/v/release/kj648/requirement-clarifier)](https://github.com/kj648/requirement-clarifier/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**[中文文档 →](README.zh-CN.md)** · currently the generated artifacts (questionnaires, specs) are in Chinese — English output is [on the roadmap](https://github.com/kj648/requirement-clarifier/issues/1).
+**[中文文档 →](README.zh-CN.md)** · The generated artifacts follow the language you talk to the agent in — it writes the questions straight into `questionnaire.json`. For the confirmation sheet's own chrome (headings, buttons, receipt skeleton) set `"lang": "en"` in the sheet's `doc` block; `zh` is the default. Machine-readable keys and the three provenance tags stay in Chinese by design — they are protocol, read by the checker and the agent, never by the business.
 
 ---
 

@@ -1,7 +1,8 @@
 import sys, unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 import build_questionnaire as bq
 
 
@@ -375,6 +376,23 @@ class TestMalformedInputReturnsInsteadOfRaising(unittest.TestCase):
 class TestRequiredFieldsMatchSchema(unittest.TestCase):
     """schema 的 required 全仓 0 处被代码引用 —— 缺字段时以前是 validate PASS →
     render_md KeyError。校验说没事,出包却崩。"""
+
+    def test_schema_required_matches_validator(self):
+        """schema 是给出题者读的契约,validate() 是真执行者 —— 两处 required 一旦
+        分叉,就会出现『schema 说必填、validate 放行、render 崩』的静默链。历史上
+        分叉过一次,靠人工同步没拦住;这条测试把它锁死。
+
+        注:`lang` 是可选的(缺省 zh),不进 required —— 加进去会让所有既有单子失效。"""
+        import json
+        schema = json.loads((ROOT / "templates" / "questionnaire.schema.json")
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(set(schema["properties"]["doc"]["required"]),
+                         set(bq.DOC_FIELDS),
+                         "schema 的 doc.required 与 build_questionnaire.DOC_FIELDS 分叉了")
+        self.assertEqual(
+            set(schema["properties"]["questions"]["items"]["required"]),
+            set(bq.Q_FIELDS),
+            "schema 的 questions[].required 与 build_questionnaire.Q_FIELDS 分叉了")
 
     def test_missing_question_fields_are_caught_before_render(self):
         for field in ("layer", "title", "no", "decide", "advice_allowed",

@@ -55,13 +55,16 @@ class TestRenderHtml(unittest.TestCase):
         self.assertTrue(data["doc"].get("code_rev"), "build 应自动填入 code_rev")
 
     def test_logic_is_marked_as_developer_reading(self):
-        """业务概念那句是开发对代码的解读,页面必须标明,不能让业务当成自己说过的话。"""
-        self.assertIn("这是开发读代码得出的理解", self.tpl)
-        self.assertIn("由开发读代码逆向", self.tpl)
+        """业务概念那句是开发对代码的解读,页面必须标明,不能让业务当成自己说过的话。
+
+        文案自 i18n 改造起不再写死在模板里(它随 doc.lang 走),所以断言落在**出包
+        产物**上 —— 那才是业务真正拿到的东西,比断言模板更贴近这条纪律要保的事。"""
+        self.assertIn("这是开发读代码得出的理解", self.html)
+        self.assertIn("由开发读代码逆向", self.html)
 
     def test_unreviewed_state_is_visible(self):
         """没做盲审就得如实说,不能让『有代码依据』看起来等于『已核实』。"""
-        self.assertIn("未经独立复核", self.tpl)
+        self.assertIn("未经独立复核", self.html)
 
     def test_no_identity_partition_left(self):
         """身份分区已撤销 —— 残留的选择器会让人以为还能按人筛。
@@ -73,7 +76,7 @@ class TestRenderHtml(unittest.TestCase):
 
     def test_decide_filter_present(self):
         for kw in ("必须业务定", "只需过目", "业务定", "开发拟定 · 请过目"):
-            self.assertIn(kw, self.tpl, f"缺硬活筛选文案: {kw}")
+            self.assertIn(kw, self.html, f"缺硬活筛选文案: {kw}")
 
     def test_no_deadline_in_template(self):
         for gone in ("回填期限", "due_days", "个工作日"):

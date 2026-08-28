@@ -7,7 +7,7 @@
 [![CI](https://github.com/kj648/requirement-clarifier/actions/workflows/ci.yml/badge.svg)](https://github.com/kj648/requirement-clarifier/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kj648/requirement-clarifier)](https://github.com/kj648/requirement-clarifier/releases)
 
-**[English README →](README.md)**
+**[English README →](README.md)** · 产出跟着你和 agent 的交互语言走——题目内容由它直接写进 `questionnaire.json`。确认单的页面外壳（抬头、按钮、回执骨架词）另由 `doc.lang: "zh" | "en"` 决定，缺省 `zh`。机读区键名与三档来源标签恒为中文：它们是给机检和 AI 读的协议，不是给业务读的文案。
 
 ---
 

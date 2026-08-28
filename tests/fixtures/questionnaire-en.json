@@ -1,0 +1,144 @@
+{
+  "doc": {
+    "id": "expense-payout", "title": "Expense payout", "round": 1,
+    "lang": "en",
+    "sent_by": "Dev", "sent_on": "2026-07-11",
+    "usage": "Your answers go into the development spec and are archived — if money ever goes out wrong, this receipt is what we trace it back to. Answer as things actually are; flagging what you are unsure of is worth more than a guess."
+  },
+  "part1": [
+    {"n": 1, "we_understand": "Once an expense claim is approved the system pays it out automatically; finance no longer works through a spreadsheet claim by claim.",
+     "note": "Tell us if this is wrong"},
+    {"n": 2, "we_understand": "Payments to companies need two-person review; reimbursing an employee does not — this feature is employee reimbursement, so no two-person review.",
+     "note": "Agreed on 2026-06-20"}
+  ],
+  "layers": [
+    {"n": 1, "why": "the payable node and the partial-rejection rule decide everything else"},
+    {"n": 2}
+  ],
+  "questions": [
+    {
+      "no": 1, "layer": 1, "blocking": true,
+      "title": "From which point is a claim \"payable\"?",
+      "decide": "biz",
+      "background": "Can we pay as soon as approval passes, or does finance have to check it first? This decides when a payout is triggered.",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "src",
+        "cites": [{"kind": "src",
+                   "path": "docs/requirements/raw/2026-07-10-voice-note.md",
+                   "line": 4,
+                   "snippet": "just pay it once the claim is approved"}],
+        "weak": null
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "Payable as soon as approval passes", "terminal": true},
+        {"key": "B", "label": "Finance has to check it first"},
+        {"key": "dk", "kind": "dontknow", "label": "I don't know", "terminal": true}
+      ]}],
+      "reveal": [{"when": "B", "ask": "How soon must the finance check be done"}],
+      "demo": {
+        "given": "a claim approved on 2026-03-01; finance finishes its check on 2026-03-03 (the extra step under option B)",
+        "basis": "assumed",
+        "rows": [
+          {"when": ["A"], "k": "when the money leaves", "v": "in the 03-01 batch, employee paid the same day"},
+          {"when": ["B"], "k": "when the money leaves", "v": "in the 03-03 batch, employee paid two days later"}
+        ]
+      }
+    },
+    {
+      "no": 2, "layer": 2,
+      "title": "How does the payout batch run?",
+      "decide": "dev",
+      "background": "You said \"don't pay several times a day\" and \"run it again a few days later\". We need that as a concrete rule before we can build it.",
+      "advice_allowed": true,
+      "evidence": {
+        "tier": "src",
+        "cites": [
+          {"kind": "src", "path": "docs/requirements/raw/2026-07-10-voice-note.md",
+           "line": 6, "snippet": "don't pay several times a day"},
+          {"kind": "src", "path": "docs/requirements/raw/2026-07-10-voice-note.md",
+           "line": 7, "snippet": "run it again a few days later"}
+        ]
+      },
+      "groups": [
+        {"id": "main", "options": [
+          {"key": "A", "label": "One batch a day, auto-retry up to 3 times",
+           "cost": "the retry limit is explicit, so when money does not arrive you can tell which retry failed"},
+          {"key": "B", "label": "One batch a week, triggered by hand", "terminal": true}
+        ]},
+        {"id": "after_retry", "ask": "What happens after 3 failed retries",
+         "inline": true, "tier": "guess",
+         "options": [
+           {"key": "manual", "label": "Hand it to a person to chase"},
+           {"key": "hold", "label": "Hold it and try again in the next batch"}
+         ]}
+      ],
+      "reveal": [{"when": "A", "ask": "How long between retries"}]
+    },
+    {
+      "no": 4, "layer": 1,
+      "title": "What counts as \"paid\"?",
+      "decide": "biz",
+      "background": "Today the code marks a claim paid as soon as the transfer is initiated. If the bank bounces it back (wrong account number, name mismatch), the claim is already marked paid while the money never reached the employee.",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "code",
+        "cites": [{
+          "kind": "code",
+          "path": "app/payout_rules.py", "line": 18,
+          "snippet": "if bill.paid_amount >= bill.approved_amount:",
+          "logic": "once the amount already paid reaches the approved amount, no further transfer is initiated — the claim counts as done at initiation, not at bank confirmation",
+          "entry": "app/payout_rules.py:15",
+          "branches": [
+            {"cond": "already paid >= approved amount", "then": "initiate nothing further", "cite": "app/payout_rules.py:19"},
+            {"cond": "payable and not yet paid in full", "then": "initiate a transfer, up to 3 retries", "cite": "app/payout_rules.py:20"}
+          ],
+          "branches_exhaustive": true
+        }]
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "Mark it paid as soon as the transfer is initiated (what the code does today; nothing to change)", "terminal": true},
+        {"key": "B", "label": "Mark it paid only once the bank confirms (bounced claims go back to unpaid)", "terminal": true}
+      ]}],
+      "demo": {
+        "given": "a claim approved for 600, transfer initiated successfully, bounced by the bank the next day for \"name mismatch\"",
+        "basis": "branches",
+        "rows": [
+          {"when": ["A"], "k": "what the system does", "v": "claim stays marked paid, nothing further is initiated"},
+          {"when": ["B"], "k": "what the system does", "v": "claim goes back to unpaid and joins the next batch"}
+        ]
+      }
+    },
+    {
+      "no": 3, "layer": 1, "blocking": true,
+      "title": "A claim only partly approved — do we still pay it automatically?",
+      "decide": "biz",
+      "background": "Only part of the amount was approved: do we pay the approved part, or hand it to a person?",
+      "advice_allowed": false,
+      "evidence": {
+        "tier": "guess", "cites": [],
+        "weak": "No evidence at all: nobody has ever mentioned partial rejection. We derived this question from our blind-spot checklist. If partial rejection cannot happen in your process, say the question does not hold and we will drop it."
+      },
+      "groups": [{"id": "main", "options": [
+        {"key": "A", "label": "Pay the approved amount", "terminal": true},
+        {"key": "B", "label": "Pause and hand it to a person", "terminal": true}
+      ]}],
+      "demo": {
+        "given": "a claim for 1000, of which only 600 was approved and 400 rejected",
+        "basis": "assumed",
+        "rows": [
+          {"when": ["A"], "k": "what the system does", "v": "600 goes out in the normal batch"},
+          {"when": ["B"], "k": "what the system does", "v": "nothing goes out; it waits in a manual queue"}
+        ]
+      }
+    }
+  ],
+  "links": {
+    "na": [{"when": "2=B", "target": "2.after_retry",
+            "note": "question 2 chose B — one batch a week triggered by hand, so there are no automatic retries to begin with"}],
+    "carry": [],
+    "clash": [{"when": "3=B & 2=A",
+               "why": "Question 2 option A means a daily job sweeps up claims and pays them out; question 3 option B means partly-approved claims wait for a person. Will the sweep pick up the claims sitting in that manual queue and pay them anyway? Who keeps them out?",
+               "require_explain": true}]
+  }
+}

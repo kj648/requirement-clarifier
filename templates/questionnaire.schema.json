@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "requirement-clarifier 确认单题目数据",
-  "description": "本文件是给出题者读的契约,不参与运行时校验 —— 校验(含必填字段存在性、类型、依赖闭环/分支对称/建议措辞)全部在 scripts/build_questionnaire.py 的 validate() 里手写实现,两处需人工保持同步。改了这里的 required 就要改那里的 DOC_FIELDS/Q_FIELDS,反之亦然。",
+  "description": "本文件是给出题者读的契约,不参与运行时校验 —— 校验(含必填字段存在性、类型、依赖闭环/分支对称/建议措辞)全部在 scripts/build_questionnaire.py 的 validate() 里手写实现。两处的 required 由 tests/test_build_questionnaire.py::test_schema_required_matches_validator 锁死:改了这里的 required 就必须改那里的 DOC_FIELDS/Q_FIELDS,反之亦然,否则测试红。",
   "type": "object",
   "required": ["doc", "questions"],
   "properties": {
@@ -10,6 +10,8 @@
       "required": ["id", "title", "round", "sent_by", "sent_on", "usage"],
       "properties": {
         "round": {"type": "integer", "description": "第 N 轮确认单。与 questions[].layer(依赖层级)是两个概念。"},
+        "lang": {"enum": ["zh", "en"], "default": "zh",
+          "description": "页面外壳(抬头、表头、按钮、提示、回执骨架词)的语言,字符串表在 scripts/i18n.py。**题目内容本身不经过它** —— 标题、选项 label、背景、weak 由出题的 AI 直接按交互语言写。写了表外的值(如 'en-US')会在出包时拒收:以前是静默退回中文,出题者以为出了英文单、业务收到中文页面。"},
         "code_rev": {"type": "string", "description": "build 时自动填 git rev-parse HEAD;仓库外运行留空。单子发出到收回代码可能变过,没有 rev 就说不出『当时代码是这样的』。"},
         "usage": {"type": "string", "description": "给业务看的『你的答案会被用到哪里』"}
       }
@@ -80,7 +82,7 @@
                     "cost": {"type": "string", "description": "该选项的代价/影响。"},
                     "terminal": {"type": "boolean", "description": "显式声明此分支到此为止。"},
                     "kind": {"enum": ["nonexistent", "dontknow"],
-                             "description": "nonexistent=这种情况不存在;dontknow=我不清楚。『都不是』兜底出口由模板自动追加,不在此声明。"}
+                             "description": "选项的语义档。nonexistent=这种情况不存在;dontknow=我不清楚。导出回执时原样写进机读区的 `主选kind`,机检的『勾了不清楚却没给知情人』因此按结构判,不再猜 label 的字面(label 是自由文本、会随语言变)。『都不是』兜底出口由模板自动追加、不在此声明,它导出时带 kind:\"other\" —— 那是阶段三『选项集猜错了、要再来一轮』的结构信号。"}
                   }}}
               }
             }

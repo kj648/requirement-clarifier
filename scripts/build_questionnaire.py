@@ -31,6 +31,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n                                                     # noqa: E402
+
 TIERS = ("src", "code", "guess")
 DECIDE = ("biz", "dev")
 ADVICE_WORDS = re.compile(r"开发建议|建议选|推荐选|我的默认建议")
@@ -190,6 +193,16 @@ def validate(doc):
     d = doc["doc"]
     if not isinstance(d, dict):
         return ["`doc` 必须是对象(含 id/title/round/sent_by/sent_on/usage)"]
+    # lang 是可选的(缺省 zh),但值必须在表里 —— 写了 "en-US"/"英文" 之类,以前会
+    # 静默退回中文外壳:出题者以为自己出了一份英文单,业务收到的是中文页面。
+    if "lang" in d and d["lang"] not in i18n.LANGS:
+        errs.append(f"`doc.lang`「{d['lang']}」不支持 —— 只有 {'/'.join(i18n.LANGS)} 两种"
+                    f"页面外壳(题目内容本身由出题的 AI 按交互语言直接写,不经过这个字段)")
+    # _i18n 是 build 注入的运行时字段(下划线前缀即此意),不许出题者手写:
+    # 手写的那份会被静默覆盖 —— 改了半天页面纹丝不动,还以为是缓存。
+    if "_i18n" in d:
+        errs.append("`doc._i18n` 由 build 注入,不许写进 questionnaire.json —— "
+                    "手写的会被覆盖,改了不生效且没有任何提示。要改文案改 scripts/i18n.py")
     for f, why in DOC_FIELDS.items():
         if f not in d or d[f] in (None, ""):
             errs.append(f"缺 `doc.{f}` —— {why}")
@@ -339,58 +352,95 @@ def render_html(doc, template, root="."):
     `root` 与 CLI 的 --root 同义:cites/rules_ref 的路径相对它解析,code_rev 也取它的 HEAD。"""
     if PLACEHOLDER not in template:
         raise ValueError(f"模板缺占位符 {PLACEHOLDER}")
+    lang = doc["doc"].get("lang") or "zh"
+    # 整份外壳字符串表随数据一起注入 —— 模板里不再写死任何文案。一份表两端同源:
+    # 这里注入的和 render_md 用的是 scripts/i18n.py 里的同一份,不会各自漂移。
     doc = {**doc, "doc": {**doc["doc"],
-                          "code_rev": doc["doc"].get("code_rev") or code_rev(root)}}
+                          "code_rev": doc["doc"].get("code_rev") or code_rev(root),
+                          "_i18n": i18n.strings(lang)}}
     # </script> 会提前闭合数据块;JSON 里的 < 一律转义,不影响 json.loads
     payload = json.dumps(doc, ensure_ascii=False).replace("<", "\\u003c")
     return template.replace(PLACEHOLDER, payload)
 
 
+def md_machine_block(doc):
+    """静态 md 末尾的机读区。
+
+    为什么 md 也要带:HTML 导出的回执自带机读区,机检走结构化路径、与语言无关;
+    md 这一路(打印/内网/微信)没有,只能走中文锚点 —— 一份英文 md 交回来,九条规则
+    不报错、只是全部不触发,静默全灭。
+
+    但 md 是**手填**的:答案落在人读文本里,机读区里没有、也不可能有。所以这个块
+    刻意不是「回执」,而是一张**表单声明**:
+      锚点 —— 这份单子的结构词是哪几个(机检据此把它们还原成规范词,再照原样跑
+              中文锚点判据;中文单子是恒等映射,判据与产物逐字节不变);
+      题   —— 题号/阻塞/标题,给机检一条独立的「应有几题」交叉验证,也给 AI 结构。
+    键名恒为中文(协议不翻译),`表单` 这个顶层键让 machine_block() 认不出它是回执,
+    不会误当成「所有题都没答」的机读回执 —— 那会把手填的答案整份吃掉。
+    """
+    d, lang = doc["doc"], doc["doc"].get("lang") or "zh"
+    S = i18n.strings(lang)
+    form = {
+        "表单": "md", "语言": lang,
+        "单据": d["id"], "轮次": d["round"],
+        "代码依据": d.get("code_rev"),
+        # 静态 md 没有导出动作,写 null;机检对表单不判落款时间(那是回执的事)
+        "导出时间": None,
+        "锚点": i18n.anchors(lang),
+        "题": [{"题号": q["no"], "阻塞": bool(q.get("blocking")), "标题": q["title"]}
+               for q in sorted(doc["questions"], key=lambda x: (x["layer"], x["no"]))],
+    }
+    return [S["rc_machine_note"], "```json",
+            json.dumps(form, ensure_ascii=False), "```"]
+
+
 def render_md(doc):
     """同一份 json 出 Markdown,供打印/docx/内网场合。
-    格式必须与 check_questionnaire.py 认的契约一致:
-    `### 问题 N：`、`☐ A. `、`【作答区】`、`## 填写信息`。"""
+    骨架词全部取自 scripts/i18n.py(与 HTML 同源),中文下与改造前逐字一致;
+    结构契约(`### 问题 N：`、`☐ A. `、`【作答区】`、`## 填写信息`)的英文对应词
+    由末尾机读区的锚点表声明,机检据此还原,见 md_machine_block()。"""
     d = doc["doc"]
-    L = [f"# 需求确认单：{d['title']}（第 {d['round']} 轮）",
-         f"> 第 {d['round']} 轮 · {d['sent_on']} · 发出人：{d['sent_by']}"
-         f" · 共 {len(doc['questions'])} 题", ""]
-    L += [d["usage"], "",
-          "填写说明：第一部分请逐条核对；第二部分请在 ☐ 打勾、【作答区】作答。"
-          "标「业务定」的题必须您自己拍板；标「开发拟定」的是我们已经拟好的默认规则，"
-          "请过目，无异议即生效。填完发回即可。", ""]
+    S = i18n.strings(d.get("lang") or "zh")
+
+    def T(k, **kw):
+        return S[k].format(**kw) if kw else S[k]
+
+    L = [T("md_title", title=d["title"], round=d["round"]),
+         T("md_meta", round=d["round"], sent_on=d["sent_on"], sent_by=d["sent_by"],
+           n=len(doc["questions"])), ""]
+    L += [d["usage"], "", T("md_howto"), ""]
 
     if doc.get("part1"):
         # 逐条三态(对/不对/未表态),不设全局「无异议」—— 与 HTML 侧同一契约(D6)。
         # 全局「无异议」和逐条核对自相矛盾:一句话盖住所有条目,等于没核对。
-        L += ["## 第一部分 · 我们理解的（请逐条核对）", "",
-              "| # | 我们理解的 | 备注 | 对不对 |", "|---|---|---|---|"]
+        cell = T("p1_cell", ok=S["p1_ok"], no=S["p1_no"], mute=S["p1_mute"])
+        L += [T("md_p1_head"), "", T("md_p1_cols"), "|---|---|---|---|"]
         L += [f"| {r['n']} | {r['we_understand']} | {r.get('note', '')}"
-              f" | ☐ 对　☐ 不对　☐ 未表态 |" for r in doc["part1"]]
+              f" | {cell} |" for r in doc["part1"]]
         # 提示语写在【作答区】之前,同 C1 的道理:写在标记后面的话,
         # check_questionnaire.py 的 substantive() 会把这句提示当成业务的异议说明,
         # 第一部分的兜底判据(既无「无异议」也无异议说明)就永远不触发。
-        L += ["", "哪条不对、哪里不对，请写在下面：", "【作答区】", ""]
+        L += ["", T("md_p1_hint"), T("answer_mark"), ""]
 
-    L += ["## 第二部分 · 待确认问题（请作答）", ""]
+    L += [T("md_p2_head"), ""]
     for q in sorted(doc["questions"], key=lambda x: (x["layer"], x["no"])):
-        decide = "业务定" if q["decide"] == "biz" else "开发拟定·请过目"
-        L.append(f"### 问题 {q['no']}：{q['title']}（{decide}）"
-                 + ("（阻塞）" if q.get("blocking") else ""))
+        decide = S["decide_biz"] if q["decide"] == "biz" else S["decide_dev_md"]
+        L.append(T("rc_qhead", no=q["no"], title=q["title"], decide=decide,
+                   blocking=S["rc_blocking"] if q.get("blocking") else ""))
         if q.get("background"):
-            L.append(f"背景：{q['background']}")
+            L.append(T("md_bg", v=q["background"]))
         # demo 与 cost 同理:HTML 渲染它、md 不渲染,就等于给打印/内网那一路的业务
         # 一张剥掉了对照表的决策单 —— 而阻塞级题的 demo 是硬要求(只画岔口不算数)。
         demo = q.get("demo") if isinstance(q.get("demo"), dict) else None
         if demo:
-            note = ("；基于开发假设的算法，未从代码验证"
-                    if demo.get("basis") == "assumed" else "")
-            L.append(f"演示对照（演示数字，非任何选项的背书{note}）：")
+            note = S["md_demo_assumed"] if demo.get("basis") == "assumed" else ""
+            L.append(T("md_demo_head", note=note))
             if demo.get("given"):
-                L.append(f"　前提：{demo['given']}")
+                L.append(T("md_demo_given", given=demo["given"]))
             for row in demo.get("rows") or []:
-                opts = "／".join(str(w) for w in (row.get("when") or []))
-                kv = "：".join(x for x in (row.get("k"), row.get("v")) if x)
-                L.append(f"　- 选 {opts} → {kv}")
+                opts = S["sep_or"].join(str(w) for w in (row.get("when") or []))
+                kv = S["sep_kv"].join(x for x in (row.get("k"), row.get("v")) if x)
+                L.append(T("md_demo_row", opts=opts, kv=kv))
         # 只有主问给勾选框：一题一个勾选标记,否则 check_questionnaire.py 判为多选。
         main = next((g for g in q["groups"] if g.get("id") == "main"), None)
         for o in (main or {}).get("options", []):
@@ -399,29 +449,28 @@ def render_md(doc):
             # cost 是「该选项的代价/影响」,与 advice_allowed(管建议措辞)是两件事。
             # 曾按 advice_allowed 过滤 cost,结果规则/账务口径题(恰恰是最需要看代价的
             # 一档)拿到的是一张剥掉了全部代价的决策单。建议措辞由 ADVICE_WORDS 拦。
-            cost = f"（{o['cost']}）" if o.get("cost") else ""
+            cost = T("paren", v=o["cost"]) if o.get("cost") else ""
             L.append(f"☐ {key}{mark}{o['label']}{cost}")
-        L.append("☐ 都不是——我要选的不在这几个里（请在作答区写明实际口径）")
+        L.append(T("md_other_opt"))
         for r in q.get("reveal", []):
-            L.append(f"（若选 {r['when']}，请在作答区一并回答：{r['ask']}）")
+            L.append(T("md_reveal", when=r["when"], ask=r["ask"]))
         # 子问不发勾选框,改成提示行 —— 选项以「／」列出,信息不丢。
         # 提示行必须写在【作答区】之前:写在后面的话 check_questionnaire.py 的
         # substantive() 会把模板自带的提示文字当成实质作答,凡带子问组的题在 md
         # 路径上永远判为已作答 —— 阻塞级漏的是 FAIL,不是 WARN。
-        # 注意这些行里不能出现「【作答区】」四字,否则又会被 split 成作答内容。
+        # 注意这些行里不能出现作答区标记,否则又会被 split 成作答内容。
         subs = [g for g in q["groups"] if g.get("id") != "main"]
         if subs:
-            L.append("（以下小问请一并写进下面的作答区：）")
+            L.append(T("md_subs_hint"))
         for g in subs:
-            menu = "／".join(o["label"] for o in g.get("options", []))
-            L.append(f"　· {g.get('ask', '该小问')}（{menu}／都不是，请写明）：")
-        L.append("【作答区】")
+            menu = S["sep_or"].join(o["label"] for o in g.get("options", []))
+            L.append(T("md_sub_line", ask=g.get("ask", S["md_sub_fallback"]), menu=menu))
+        L.append(T("answer_mark"))
         L.append("")
 
-    L += ["## 填写信息",
-          "填写人：____　部门：____　日期：____",
-          "（留名字是为了日后能找回是谁定的；不填也能交，但只能按【开发拟定·待追认】入账）",
-          "代答／转交说明：____", ""]
+    L += [T("md_sign_head"), T("md_sign_line"), T("md_sign_why"), T("md_relay"), ""]
+    L += md_machine_block(doc)
+    L.append("")
     return "\n".join(L)
 
 

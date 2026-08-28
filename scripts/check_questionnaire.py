@@ -18,6 +18,14 @@
   C. 机读区存在但解析失败(被手改坏)→ 降级走 B + 一条 WARN「机读区损坏」。
      为什么不直接 FAIL: 手改坏机读区的人多半只是在编辑器里动了正文,人读部分
      还是好的;拦下来不如降级并说清「这次是按人读文本判的」。
+  B′. md 表单路径 —— `--md` 出的静态单子是**手填**的:答案落在人读文本里,机读区
+     里没有也不可能有,所以它不是回执,不能按 A 判(那会把手填的答案整份吃掉、
+     报「全部未答」)。它带的是一张**锚点表**(build_questionnaire.md_machine_block):
+     声明这份单子的结构词是哪几个。机检据此把结构词还原成中文规范词,再原样跑 B。
+     中文单子的锚点表是恒等映射 → 文本一个字符都不动,判据与结论逐字节不变;
+     英文单子于是也能走 B,而 checker 里不必再养一份英文词表(那就又是两份真源)。
+     另拿机读区里的题号表与文本认出的题数交叉验证:对不上就说明结构词没对上,
+     报一条 WARN,而不是让机检悄悄少看几道题。
 
 机读区结构(templates/questionnaire.html 的 buildReceipt() 是唯一真源):
   {单据,轮次,代码依据,导出时间,
@@ -43,11 +51,13 @@
    A: 不判 —— 主选组渲染成 radio(见模板 optHtml),结构上不可能多选,机读区里
       `主选` 也只有一个标量位置。这条规则在结构化路径下没有可判对象。
 3. "我不清楚"台阶: 勾了"不清楚/不知道"但没给知情人 → WARN(索要真正知情人)。
-   A: 判 `主选` 是否命中关键词。这里只能是关键词兜底 —— 选项 label 是自由文本,
-      英文回执写的是 "I don't know",机读区没有「这是不清楚档」的结构标记,所以
-      中英各认一组词。认不出时会漏报(不会误报),是本条已知的成色上限。
+   A: 优先看 `主选kind` —— 导出器把选中项 questionnaire.json 里的 `kind`
+      (dontknow/nonexistent/other)原样写进机读区,这是结构判据,与 label 的语言
+      无关。没有 `主选kind` 的旧回执才落回中英关键词兜底(认不出时漏报不误报)。
 4. 第一部分核对: 「未表态」的条数 >0 → WARN(点出条数)。
-   A: 数 `第一部分[].核对` 为空或命中「未表态/undecided」的条数。
+   A: `第一部分[].核对` 是机器枚举 ok|no|mute —— 数 mute 的条数。人读表格里写的
+      是 locale 词(对/不对/未表态、Yes/No/Undecided),机读区不写它们。旧回执写的
+      是中文词,仍然认(空 / 命中「未表态·undecided」一类词 → 算未表态)。
    B: 三态表数行;没有三态表的手写单退回兜底判据 —— 无"无异议"且【作答区】空 → WARN。
    判据必须是数条数,不能是「这一段有没有字」—— 导出器无论核对与否都会写满该列。
 5. 落款检查: 日期空缺 → FAIL(落款是溯源凭证);部门空缺 → WARN。
@@ -166,6 +176,37 @@ def _filled(rec: dict, key: str) -> bool:
     return not _blank(rec.get(key))
 
 
+# 第一部分核对的机器枚举 —— 导出器写它,不写 locale 词(见 docstring 规则 4)。
+P1_ENUM = {"ok": False, "no": False, "mute": True}
+
+
+def _p1_is_mute(rec: dict) -> bool:
+    """这一条算不算「未表态」。
+
+    先认机器枚举(语言无关),再落回旧回执的中文/英文词。判据必须是数条数,不能是
+    「这一段有没有字」—— 导出器无论核对与否都会把该列写满。
+    """
+    v = rec.get("核对")
+    if isinstance(v, str) and v in P1_ENUM:
+        return P1_ENUM[v]
+    return _blank(v) or bool(J_MUTE.search(str(v)))
+
+
+def _is_dont_know(rec: dict, main: str) -> bool:
+    """主选是不是「我不清楚」那一档。
+
+    `主选kind` 是导出器从 questionnaire.json 的选项 kind 原样带出来的结构标记,
+    有它就不必猜 label 的字面 —— 英文单子写 "I don't know" 还是 "No idea" 都一样。
+    判据是**键在不在**,不是值真不真:键在就说明这份回执是新导出器出的、它一路
+    跟着选项的语义档,值为 null 就是「这个选项没有语义档」——此时不该再拿关键词
+    去猜,否则一道正常选项只因 label 里带了「不清楚」三个字就被误报。
+    只有键整个不在(旧回执)才落回中英关键词:认不出时漏报,不误报。
+    """
+    if "主选kind" in rec:
+        return rec.get("主选kind") == "dontknow"
+    return bool(J_DONT_KNOW.search(main))
+
+
 def _extra(rec: dict) -> bool:
     """主选以外还有没有实质内容 —— 子项／跳过／不适用／补充。
 
@@ -198,8 +239,7 @@ def check_json(J: dict, text: str, warns: list, fails: list):
     # 4. 第一部分核对
     p1 = J.get("第一部分") or []
     if isinstance(p1, list) and p1:
-        n_mute = sum(1 for r in p1 if isinstance(r, dict)
-                     and (_blank(r.get("核对")) or J_MUTE.search(str(r.get("核对")))))
+        n_mute = sum(1 for r in p1 if isinstance(r, dict) and _p1_is_mute(r))
         if n_mute:
             warns.append(f"第一部分有 {n_mute} 条『未表态』—— 这些条目不得视为业务已认可,"
                          f"须逐条核对完再入账(导出器无论核对与否都会写满该列,"
@@ -218,7 +258,7 @@ def check_json(J: dict, text: str, warns: list, fails: list):
             unanswered.append((no, blocking))
             (fails if blocking else warns).append(unanswered_msg(no, blocking))
         main = "" if _blank(rec.get("主选")) else str(rec["主选"])
-        if main and J_DONT_KNOW.search(main) and not _extra(rec):
+        if main and _is_dont_know(rec, main) and not _extra(rec):
             warns.append(f"问题 {no} 勾了『不清楚』但作答区未提供知情人,请索要真正知情人")
         if _filled(rec, "不成立"):
             why = str(rec["不成立"]).strip()
@@ -255,6 +295,58 @@ def check_json(J: dict, text: str, warns: list, fails: list):
             fails.append(f"{n_mute_clash} 处矛盾业务未给说明 —— 必须回问,不得自行选一边")
 
     return len(qs), len(unanswered), len(denied), n_clash
+
+
+# ══ md 表单:锚点归一(见 docstring 路径 B′)══════════════════════════════
+# 「机检认的中文规范词」→ 它在中文单子里长什么样。英文单子的对应词由单子自己的
+# 机读区声明,不在这里写死 —— 在 checker 里养一份英文词表就又是两份真源了。
+CANON = {"问题": "问题", "作答区": ANSWER_MARK, "第一部分": "第一部分",
+         "第二部分": "第二部分", "填写信息": "填写信息", "阻塞": "阻塞",
+         "未表态": "未表态", "填写人": "填写人", "部门": "部门", "日期": "日期"}
+
+
+def md_form(text: str):
+    """取 md 静态表单的机读区。回执的机读区有 题目/落款,表单的顶层键是 `表单`
+    —— 两者必须分得开:表单里没有答案(答案在人读文本里),按回执判会报「全部未答」。"""
+    for m in reversed(list(JSON_FENCE.finditer(text))):
+        try:
+            obj = json.loads(m.group("body"))
+        except (ValueError, TypeError):
+            continue
+        if isinstance(obj, dict) and obj.get("表单") == "md":
+            return obj
+    return None
+
+
+def canonicalize(text: str, anchors: dict) -> str:
+    """把 md 表单的结构词还原成机检认的中文规范词,再交给原样的锚点路径。
+
+    恒等映射(中文单子)直接原样返回 —— 保证中文这一路一个字符都不被动过。
+    替换按行定界(标题行只动标题词、表格行只动三态词、落款行只动字段名),不做
+    全文无差别替换:题目内容是自由文本,英文里 "Question"/"blocking" 也可能出现在
+    正文中,盲替会改坏业务写的话。误伤的方向也是保守的 —— 多认出一个「阻塞」只会
+    让漏答从 WARN 升成 FAIL,不会放人过去。
+    """
+    a = {k: str((anchors or {}).get(k) or v) for k, v in CANON.items()}
+    if a == CANON:
+        return text
+    out = []
+    sign_head = re.compile(rf'^\s*{re.escape(a["填写人"])}\s*[:：]')
+    for line in text.split("\n"):
+        s = line
+        if s.startswith("###"):
+            # count=1:只还原行首那个标题词,题目标题里再出现同一个词不动它
+            s = s.replace(a["问题"], CANON["问题"], 1).replace(a["阻塞"], CANON["阻塞"])
+        elif s.startswith("##"):
+            for k in ("第一部分", "第二部分", "填写信息"):
+                s = s.replace(a[k], CANON[k])
+        elif s.lstrip().startswith("|"):
+            s = s.replace(a["未表态"], CANON["未表态"])
+        if sign_head.match(s):
+            for k in ("填写人", "部门", "日期"):
+                s = re.sub(rf'{re.escape(a[k])}(\s*[:：])', CANON[k] + r'\1', s)
+        out.append(s.replace(a["作答区"], CANON["作答区"]))
+    return "\n".join(out)
 
 
 # ══ 人读锚点路径(兼容层,判据一字不动)══════════════════════════════════
@@ -357,7 +449,17 @@ def check_file(fp: str):
     if J is not None:
         n_q, n_un, n_den, n_clash = check_json(J, text, warns, fails)
     else:
+        # md 表单是手填的,答案只在人读文本里 —— 机读区给的是锚点表,不是答案。
+        form = md_form(text)
+        if form is not None:
+            print("  · 按 md 表单机读区的锚点表归一后判(答案在人读文本里)")
+            text = canonicalize(text, form.get("锚点"))
         n_q, n_un, n_den, n_clash = check_anchors(text, warns, fails)
+        declared = form.get("题") if isinstance(form, dict) else None
+        if isinstance(declared, list) and declared and n_q != len(declared):
+            warns.append(f"机读区声明本单共 {len(declared)} 题,人读文本只认出 {n_q} 道"
+                         f" —— 结构词与锚点表对不上(单子被改写过?),机检可能少看了题,"
+                         f"请人工核对")
 
     for msg in fails: print(f"  ✗ {msg}")
     for msg in warns: print(f"  △ {msg}")
