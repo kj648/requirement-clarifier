@@ -384,7 +384,7 @@ def md_machine_block(doc):
         "表单": "md", "语言": lang,
         "单据": d["id"], "轮次": d["round"],
         "代码依据": d.get("code_rev"),
-        # 静态 md 没有导出动作,写 null;机检对表单不判落款时间(那是回执的事)
+        # 静态 md 没有导出动作,写 null;导出时间只有回执才有
         "导出时间": None,
         "锚点": i18n.anchors(lang),
         "题": [{"题号": q["no"], "阻塞": bool(q.get("blocking")), "标题": q["title"]}
@@ -468,7 +468,7 @@ def render_md(doc):
         L.append(T("answer_mark"))
         L.append("")
 
-    L += [T("md_sign_head"), T("md_sign_line"), T("md_sign_why"), T("md_relay"), ""]
+    L += [T("md_sign_head"), T("md_sign_line"), T("md_relay"), ""]
     L += md_machine_block(doc)
     L.append("")
     return "\n".join(L)

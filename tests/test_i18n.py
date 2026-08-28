@@ -30,7 +30,7 @@ def _check(text):
 
 
 def _tick_first_option(md, qhead):
-    """把每道题的第一个 ☐ 勾上,再补一个落款 —— 模拟业务在打印稿上手填。"""
+    """把每道题的第一个 ☐ 勾上 —— 模拟业务在打印稿上手填。"""
     out, ticked = [], False
     for line in md.split("\n"):
         if line.startswith(qhead):
@@ -60,9 +60,15 @@ class TestStringTable(unittest.TestCase):
             self.assertIn(A["填写信息"], S["md_sign_head"], lang)
             self.assertIn(A["未表态"], S["p1_cell"].format(
                 ok=S["p1_ok"], no=S["p1_no"], mute=S["p1_mute"]), lang)
-            for k in ("填写人", "部门", "日期"):
-                self.assertIn(A[k], S["md_sign_line"], f"{lang}/{k}")
-                self.assertIn(A[k], S["rc_sign_line"], f"{lang}/{k}")
+
+    def test_the_signoff_strings_are_gone(self):
+        """落款仪式整体拆除后,两门表里都不该再留下这些键 —— 留着就会有人再把
+        署名栏接回去,而机检那一侧已经没有对应规则了。"""
+        for lang in i18n.LANGS:
+            for gone in ("w_name", "w_dept", "sign_name", "sign_dept", "sign_why",
+                         "rc_unsigned", "rc_unsigned_ph", "rc_file_unsigned",
+                         "pv_sign", "pv_unsigned", "md_sign_why"):
+                self.assertNotIn(gone, i18n.strings(lang), f"{lang}/{gone}")
 
 
 class TestDocLang(unittest.TestCase):
@@ -165,7 +171,6 @@ class TestMdMachineBlock(unittest.TestCase):
         self.assertIn("## 第二部分", got)
         self.assertIn("## 填写信息", got)
         self.assertIn("【作答区】", got)
-        self.assertIn("填写人:", got)
 
     def test_question_titles_keep_their_own_words(self):
         """归一只动结构词。题目正文里再出现一次 "Question" 不该被改掉 ——
@@ -198,21 +203,15 @@ class TestEnglishMdGoesThroughTheChecker(unittest.TestCase):
                     for l in self.out.splitlines()), f"问题 {no} 未报 FAIL:\n{self.out}")
         self.assertEqual(self.code, 1, self.out)
 
-    def test_signoff_rules_still_fire(self):
-        self.assertIn("落款缺『日期』", self.out, self.out)
-        self.assertIn("落款缺『部门』", self.out, self.out)
-        self.assertIn("回执未署名", self.out, self.out)
-
-    def test_the_anchor_fallback_warnings_do_not_appear(self):
-        """出现这两条就说明结构词没还原成功,机检其实什么都没看见。"""
+    def test_the_anchor_fallback_warning_does_not_appear(self):
+        """出现这条就说明结构词没还原成功,机检其实什么都没看见。"""
         self.assertNotIn("未识别到任何", self.out, self.out)
-        self.assertNotIn("缺少『## 填写信息』落款区", self.out, self.out)
 
     def test_a_filled_english_sheet_passes(self):
-        """手填的英文单子必须能通过 —— md 这一路的存在意义就是手填后交回来。"""
+        """手填的英文单子必须能通过 —— md 这一路的存在意义就是手填后交回来。
+        落款拆除后连日期都不必补:机检已无落款规则,单子填完题就该过。"""
         text = _tick_first_option(self.md, "### Question ").replace(
-            "Filled by: ____   Department: ____   Date: ____",
-            "Filled by: Wang Fang   Department: Finance   Date: 2026-08-28")
+            "Date: ____", "Date: 2026-08-28")
         code, out = _check(text)
         self.assertNotIn("勾选了", out, out)
         self.assertEqual(code, 0, out)
@@ -335,13 +334,10 @@ class TestRealEnglishReceipt(unittest.TestCase):
         self.assertIn("按机读区判", self.out)
         self.assertIn("第一部分有 1 条『未表态』", self.out)          # 4 靠 mute 枚举
         self.assertIn("问题 1 勾了『不清楚』", self.out)               # 3 靠 主选kind
-        self.assertIn("判为不成立 1 道", self.out)                    # 7
-        self.assertIn("回执未署名", self.out)                         # 8
-        self.assertIn("落款缺『部门』", self.out)                      # 5
-        self.assertIn("1 处矛盾业务未给说明", self.out)               # 9
+        self.assertIn("判为不成立 1 道", self.out)                    # 6
+        self.assertIn("1 处矛盾业务未给说明", self.out)               # 7
         self.assertIn("题目 4 道", self.out)
         self.assertNotIn("未识别到任何", self.out)
-        self.assertNotIn("缺少『## 填写信息』落款区", self.out)
 
     def test_part1_column_carries_the_machine_enum(self):
         """人读表格写 Yes/Undecided,机读区写 ok/mute —— 判据落在后者。"""
@@ -368,14 +364,14 @@ class TestStructuredRulesAreLanguageNeutral(unittest.TestCase):
     def test_part1_machine_enum_is_counted(self):
         J = {"第一部分": [{"条": 1, "核对": "ok"}, {"条": 2, "核对": "no"},
                           {"条": 3, "核对": "mute"}],
-             "题目": [], "落款": {"填写人": "王芳", "部门": "财务", "导出时间": "2026-08-28"}}
+             "题目": [], "落款": {"导出时间": "2026-08-28", "补充说明": ""}}
         warns, _ = self._run(J)
         self.assertTrue(any("1 条『未表态』" in w for w in warns), warns)
 
     def test_legacy_chinese_values_still_counted(self):
         """旧回执写的是「对/不对/未表态」—— 换枚举不得让老单子静默失效。"""
         J = {"第一部分": [{"条": 1, "核对": "对"}, {"条": 2, "核对": "未表态"}],
-             "题目": [], "落款": {"填写人": "王芳", "部门": "财务", "导出时间": "x"}}
+             "题目": [], "落款": {"导出时间": "x", "补充说明": ""}}
         warns, _ = self._run(J)
         self.assertTrue(any("1 条『未表态』" in w for w in warns), warns)
 
@@ -383,7 +379,7 @@ class TestStructuredRulesAreLanguageNeutral(unittest.TestCase):
         """label 是自由文本。kind 说了算 —— 写成 "Ask the finance team" 也照样命中。"""
         J = {"题目": [{"题号": 1, "阻塞": False, "主选": "C. Ask the finance team",
                        "主选kind": "dontknow", "子项": {}, "跳过": [], "补充": ""}],
-             "落款": {"填写人": "W", "部门": "F", "导出时间": "x"}}
+             "落款": {"导出时间": "x", "补充说明": ""}}
         warns, _ = self._run(J)
         self.assertTrue(any("勾了『不清楚』" in w for w in warns), warns)
 
@@ -392,14 +388,14 @@ class TestStructuredRulesAreLanguageNeutral(unittest.TestCase):
         `主选kind: null`)就不该报 —— 关键词兜底会误报,结构判不会。"""
         J = {"题目": [{"题号": 1, "阻塞": False, "主选": "A. 谁都不清楚的那条老规则",
                        "主选kind": None, "子项": {}, "跳过": [], "补充": ""}],
-             "落款": {"填写人": "W", "部门": "F", "导出时间": "x"}}
+             "落款": {"导出时间": "x", "补充说明": ""}}
         warns, _ = self._run(J)
         self.assertFalse([w for w in warns if "勾了『不清楚』" in w], warns)
 
     def test_keyword_fallback_survives_for_receipts_without_kind(self):
         J = {"题目": [{"题号": 1, "阻塞": False, "主选": "C. I don't know",
                        "子项": {}, "跳过": [], "补充": ""}],
-             "落款": {"填写人": "W", "部门": "F", "导出时间": "x"}}
+             "落款": {"导出时间": "x", "补充说明": ""}}
         warns, _ = self._run(J)
         self.assertTrue(any("勾了『不清楚』" in w for w in warns), warns)
 

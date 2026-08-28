@@ -4,7 +4,7 @@
 定位(issue #1 收敛后的结论):
 - **内容语言零工作**。题目标题、选项 label、背景、weak 说明……都由 AI 按交互语言
   直接写进 questionnaire.json,不经过这张表。语言切换是模型的自带能力。
-- **协议词汇不翻译**。机读区的 JSON 键名(题号／主选／落款……)、三档来源标签
+- **协议词汇不翻译**。机读区的 JSON 键名(题号／主选／矛盾……)、三档来源标签
   (【业务确认】/【开发拟定】/【假设】)是协议,像 HTTP 头,业务不读它们。
 - 真正需要一张表的只有**页面外壳**(chrome):抬头、表头、按钮、提示、回执骨架词。
 
@@ -16,6 +16,8 @@ md 表单则自带一张锚点表(见 build_questionnaire.MD_ANCHORS)。
 
 改这里的规矩:
 1. 键只增不改。键名是模板与 render_md 的契约,改名会让页面上出现光秃秃的键名。
+   删键只在**整个功能被拆除**时做(如落款仪式整体拆除),且必须两门语言
+   同时删、连同它的所有引用一起删 —— 剩一处引用就是页面上一个光秃秃的键名。
 2. 占位符统一写 `{name}`;Python 侧 `.format(**kw)`,JS 侧 `fmt()` 做同样的替换。
 3. en 不是逐字直译 —— 语气与中文版对齐:用后果说话,不用术语。
 """
@@ -33,9 +35,6 @@ STRINGS = {
         "w_part1": "第一部分",
         "w_part2": "第二部分",
         "w_signoff": "填写信息",
-        "w_name": "填写人",
-        "w_dept": "部门",
-        "w_date": "日期",
 
         # ── 抬头 ────────────────────────────────────────────────
         "kicker": "需求确认单 · 第 {round} 轮",
@@ -149,8 +148,9 @@ STRINGS = {
         "dlg_title": "发回之前，请过一眼",
         "dlg_close": "关闭",
         "dlg_raw": "查看要发回给开发的原始文本（技术细节，不看也没关系）",
-        "dlg_note": "下载失败（如在微信里打开）就点「复制全文」，粘贴到聊天窗发回。",
-        "copy": "复制全文",
+        "dlg_note": "「复制回执」复制的是给 AI 的机读回执——粘贴到您和开发的对话里发回即可；"
+                    "要留一份完整存档再点「下载 .md 文件」。",
+        "copy": "复制回执",
         "copied": "已复制 ✓",
         "copy_manual": "已选中，请按 ⌘C",
         "download": "下载 .md 文件",
@@ -159,17 +159,12 @@ STRINGS = {
         "filter_biz": "必须业务定",
         "filter_dev": "只需过目",
 
-        # ── 落款 ────────────────────────────────────────────────
+        # ── 填写信息（只剩导出时间 + 给开发的补充）──────────────
+        # 填写人／部门已整体拆除:找谁确认是开发者自己知道的事,回执本身就是结论。
         "sign_title": "填写信息",
-        "sign_why": "日期由页面在导出时自动记录，不用填。留名字是为了日后能找回是谁定的——"
-                    "不填也能导出，但回执会自动标注「未署名」，我们只能按【开发拟定·待追认】入账。",
-        "sign_name": "填写人（选填，浏览器会记住）",
-        "sign_name_ph": "您的名字",
-        "sign_dept": "部门（选填）",
-        "sign_dept_ph": "部门",
         "sign_date": "导出时间（自动）",
-        "sign_relay": "代答／转交说明",
-        "sign_relay_ph": "例：问题 1、3 已电话确认过王芳；问题 2 已转交李姐",
+        "sign_relay": "补充给开发的说明（选填）",
+        "sign_relay_ph": "例：问题 1、3 已跟王芳电话对过；问题 2 我不清楚，已转给李姐",
 
         # ── 回执骨架 ────────────────────────────────────────────
         "rc_title": "# 需求确认单回执：{title}（第 {round} 轮）",
@@ -181,8 +176,6 @@ STRINGS = {
         "rc_grade_clash": " · ⚠ {n} 处矛盾",
         "rc_split": "> 分档：业务定 {biz} 题（已答 {biz_done}）"
                     " · 开发拟定 {dev} 题（已过目 {dev_done}）",
-        "rc_unsigned": "> ⚠ 未署名：本回执不得记为【业务确认】，须按【开发拟定·待追认】入账，"
-                       "回头补落款才能转正。",
         "rc_clash_head": "## ⚠ 填写时暴露的矛盾（请开发优先处理）",
         "rc_clash_item": "- {when} —— 两者同时成立：{text}…",
         "rc_clash_note": "  业务说明：{v}",
@@ -207,13 +200,10 @@ STRINGS = {
         # 而它是本键的前缀,所以归一照样命中。
         "answer_mark_inline": "【作答区】",
         "rc_sign_head": "## 填写信息",
-        "rc_sign_line": "填写人：{name}　部门：{dept}　日期：{date}",
-        "rc_unsigned_ph": "（未署名·导出自 HTML 确认单）",
-        "rc_unfilled": "（未填）",
-        "rc_relay": "代答／转交说明：{v}",
+        "rc_sign_line": "导出时间：{date}",
+        "rc_relay": "补充给开发的说明：{v}",
         "rc_machine_note": "<!-- 机读区（供 check_questionnaire.py / AI 解析，业务无需理会） -->",
         "rc_file_word": "确认单回执",
-        "rc_file_unsigned": "未署名",
 
         # ── 人读回执预览 ────────────────────────────────────────
         "pv_answered": "已答",
@@ -221,10 +211,7 @@ STRINGS = {
         "pv_denied": "判为不成立",
         "pv_unanswered": "没答",
         "pv_clash": "矛盾",
-        "pv_sign": "署名：",
-        "pv_exported_at": " · 导出于 {now}",
-        "pv_unsigned": "⚠ 没留名字。回执照样能发，但开发只能按「待追认」入账，"
-                       "日后要是有人问“这是谁定的”就查不到了。回上面填个名字更好。",
+        "pv_exported_at": "导出于 {now}",
         "pv_clash_head": "⚠ 有一处选择互相打架",
         "pv_clash_said": "您的说明是「{v}」，会一起发给开发。",
         "pv_clash_none": "您还没写怎么处理——建议回去补一句，否则开发只能再来问一轮。",
@@ -252,10 +239,8 @@ STRINGS = {
         "md_sub_line": "　· {ask}（{menu}／都不是，请写明）：",
         "md_sub_fallback": "该小问",
         "md_sign_head": "## 填写信息",
-        "md_sign_line": "填写人：____　部门：____　日期：____",
-        "md_sign_why": "（留名字是为了日后能找回是谁定的；不填也能交，"
-                       "但只能按【开发拟定·待追认】入账）",
-        "md_relay": "代答／转交说明：____",
+        "md_sign_line": "日期：____",
+        "md_relay": "补充给开发的说明：____",
     },
 
     "en": {
@@ -265,9 +250,6 @@ STRINGS = {
         "w_part1": "Part 1",
         "w_part2": "Part 2",
         "w_signoff": "Sign-off",
-        "w_name": "Filled by",
-        "w_dept": "Department",
-        "w_date": "Date",
 
         # ── masthead ───────────────────────────────────────────
         "kicker": "Confirmation sheet · round {round}",
@@ -394,8 +376,10 @@ STRINGS = {
         "dlg_title": "Before you send it back, take a look",
         "dlg_close": "Close",
         "dlg_raw": "See the raw text that goes back to the developers (technical; you can skip it)",
-        "dlg_note": "If the download fails, hit “Copy all” and paste it into chat instead.",
-        "copy": "Copy all",
+        "dlg_note": "“Copy receipt” copies the machine-readable receipt meant for the AI — "
+                    "paste it back into your chat with the developers. Hit “Download .md” "
+                    "if you also want the full archive copy.",
+        "copy": "Copy receipt",
         "copied": "Copied ✓",
         "copy_manual": "Selected — press ⌘C",
         "download": "Download .md",
@@ -404,20 +388,12 @@ STRINGS = {
         "filter_biz": "Yours to decide",
         "filter_dev": "Just review",
 
-        # ── sign-off ───────────────────────────────────────────
+        # ── fill-in info (export time + a note for the developers) ──
         "sign_title": "Sign-off",
-        "sign_why": "The date is recorded automatically when you export; you do not fill it in. "
-                    "The name is what lets anyone find out later who decided this — you can "
-                    "export without it, but the receipt will be marked unsigned, and we can "
-                    "only book it as a dev default awaiting sign-off.",
-        "sign_name": "Your name (optional; the browser remembers it)",
-        "sign_name_ph": "Your name",
-        "sign_dept": "Department (optional)",
-        "sign_dept_ph": "Department",
         "sign_date": "Export time (automatic)",
-        "sign_relay": "Answered for someone else / passed on to",
-        "sign_relay_ph": "e.g. questions 1 and 3 confirmed with Wang Fang by phone; "
-                         "question 2 passed to Li",
+        "sign_relay": "Anything to tell the developers (optional)",
+        "sign_relay_ph": "e.g. questions 1 and 3 were checked with Wang Fang by phone; "
+                         "I do not know question 2, passed it to Li",
 
         # ── receipt skeleton ───────────────────────────────────
         "rc_title": "# Confirmation receipt: {title} (round {round})",
@@ -429,9 +405,6 @@ STRINGS = {
         "rc_grade_clash": " · ⚠ {n} contradiction(s)",
         "rc_split": "> Split: {biz} for you to decide ({biz_done} answered)"
                     " · {dev} dev proposals ({dev_done} reviewed)",
-        "rc_unsigned": "> ⚠ Unsigned: this receipt cannot be booked as business-confirmed. "
-                       "It can only be booked as a dev default awaiting sign-off, and it turns "
-                       "into a confirmed answer once a name is added.",
         "rc_clash_head": "## ⚠ Contradictions surfaced while filling (developers: handle first)",
         "rc_clash_item": "- {when} — both hold at once: {text}…",
         "rc_clash_note": "  Business note: {v}",
@@ -454,14 +427,11 @@ STRINGS = {
         "answer_mark": "[Answer]",
         "answer_mark_inline": "[Answer] ",
         "rc_sign_head": "## Sign-off",
-        "rc_sign_line": "Filled by: {name}   Department: {dept}   Date: {date}",
-        "rc_unsigned_ph": "(unsigned · exported from the HTML sheet)",
-        "rc_unfilled": "(not filled)",
-        "rc_relay": "Answered for / passed on to: {v}",
+        "rc_sign_line": "Exported at: {date}",
+        "rc_relay": "Note for the developers: {v}",
         "rc_machine_note": "<!-- machine-readable block (for check_questionnaire.py / AI; "
                            "you can ignore it) -->",
         "rc_file_word": "receipt",
-        "rc_file_unsigned": "unsigned",
 
         # ── human-readable receipt preview ─────────────────────
         "pv_answered": "answered",
@@ -469,11 +439,7 @@ STRINGS = {
         "pv_denied": "not applicable",
         "pv_unanswered": "unanswered",
         "pv_clash": "contradictions",
-        "pv_sign": "Signed: ",
-        "pv_exported_at": " · exported {now}",
-        "pv_unsigned": "⚠ No name given. You can still send this, but the developers can only "
-                       "book it as awaiting sign-off, and nobody will be able to answer “who "
-                       "decided this?” later. Better to scroll up and add your name.",
+        "pv_exported_at": "exported {now}",
         "pv_clash_head": "⚠ Two of your choices contradict each other",
         "pv_clash_said": "Your note — “{v}” — goes back with the receipt.",
         "pv_clash_none": "You have not said how to handle it. Better to add a line, or the "
@@ -504,11 +470,8 @@ STRINGS = {
         "md_sub_line": "  · {ask} ({menu} / none of these, please write it out):",
         "md_sub_fallback": "this sub-question",
         "md_sign_head": "## Sign-off",
-        "md_sign_line": "Filled by: ____   Department: ____   Date: ____",
-        "md_sign_why": "(the name is what lets anyone find out later who decided this; you can "
-                       "send it back without one, but it can only be booked as a dev default "
-                       "awaiting sign-off)",
-        "md_relay": "Answered for / passed on to: ____",
+        "md_sign_line": "Date: ____",
+        "md_relay": "Note for the developers: ____",
     },
 }
 
@@ -520,7 +483,7 @@ STRINGS = {
 ANCHOR_KEYS = {
     "问题": "w_question", "作答区": "answer_mark", "第一部分": "w_part1",
     "第二部分": "w_part2", "填写信息": "w_signoff", "阻塞": "w_blocking",
-    "未表态": "p1_mute", "填写人": "w_name", "部门": "w_dept", "日期": "w_date",
+    "未表态": "p1_mute",
 }
 
 

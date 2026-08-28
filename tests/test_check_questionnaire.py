@@ -20,12 +20,6 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("全部题目已作答", out)
 
-    def test_unsigned_warns_and_states_downgrade(self):
-        code, out = run("receipt-unsigned.md")
-        self.assertEqual(code, 0, out)                    # 不拦，业务可先交一半
-        self.assertIn("未署名", out)
-        self.assertIn("待追认", out)
-
     def test_denied_question_counted_separately(self):
         code, out = run("receipt-denied.md")
         self.assertIn("判为不成立 1 道", out)
@@ -104,10 +98,8 @@ class TestStructuredPathIsPreferred(unittest.TestCase):
         self.assertIn("按机读区判", out)
         self.assertIn("未作答(阻塞级)", out)                 # 规则 1
         self.assertIn("第一部分有 1 条『未表态』", out)        # 规则 4
-        self.assertIn("判为不成立 1 道", out)                 # 规则 7
-        self.assertIn("回执未署名", out)                      # 规则 5／8
-        self.assertIn("待追认", out)
-        self.assertIn("1 处矛盾业务未给说明", out)            # 规则 9
+        self.assertIn("判为不成立 1 道", out)                 # 规则 6
+        self.assertIn("1 处矛盾业务未给说明", out)            # 规则 7
 
     def test_the_human_readable_half_of_that_receipt_would_have_passed(self):
         """同一份 fixture 的人读部分被故意写成「全部已答、矛盾已解释、已署名」:
@@ -123,7 +115,6 @@ class TestStructuredPathIsPreferred(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertNotIn("未作答", p.stdout)
         self.assertNotIn("未给说明", p.stdout)
-        self.assertNotIn("未署名", p.stdout)
 
     def test_english_receipt_still_triggers_the_rules(self):
         """本次任务的验收核心:全英文回执(结构词、选项 label 全英文)不再静默通过。"""
@@ -132,14 +123,11 @@ class TestStructuredPathIsPreferred(unittest.TestCase):
         self.assertIn("问题 1 未作答(阻塞级)", out)           # 1 阻塞级未答 → FAIL
         self.assertIn("问题 2 勾了『不清楚』", out)            # 3 英文 "I don't know"
         self.assertIn("第一部分有 2 条『未表态』", out)        # 4 undecided + 空 都算
-        self.assertIn("判为不成立 1 道", out)                 # 7 证伪
-        self.assertIn("回执未署名", out)                      # 8
-        self.assertIn("落款缺『部门』", out)                   # 5
-        self.assertIn("1 处矛盾业务未给说明", out)            # 9 "(not explained)"
+        self.assertIn("判为不成立 1 道", out)                 # 6 证伪
+        self.assertIn("1 处矛盾业务未给说明", out)            # 7 "(not explained)"
         self.assertIn("题目 4 道", out)
-        # 锚点路径的两条兜底告警不得出现 —— 出现就说明没走结构化路径
+        # 锚点路径的兜底告警不得出现 —— 出现就说明没走结构化路径
         self.assertNotIn("未识别到任何", out)
-        self.assertNotIn("缺少『## 填写信息』落款区", out)
 
     def test_anchor_path_alone_sees_nothing_in_that_english_receipt(self):
         """要修的缺口本身立一条护栏:同一份英文回执抽掉机读区,锚点路径一条实质
@@ -168,10 +156,13 @@ class TestStructuredPathIsPreferred(unittest.TestCase):
     def test_receipts_without_a_machine_block_take_the_anchor_path(self):
         """兼容层:无机读区的手写单/旧回执一律走原来的中文锚点,判据一字未动。
         (这些 fixture 的逐条结论由本文件上半部分的既有测试盯着,改前改后逐字节一致。)"""
-        targets = [p for p in FIX.glob("receipt-*.md") if "json" not in p.name]
+        # 带机读区的 fixture 不属于这一路(它们由结构化路径的测试盯着)
+        WITH_BLOCK = ("json", "min-machine", "full-md")
+        targets = [p for p in FIX.glob("receipt-*.md")
+                   if not any(w in p.name for w in WITH_BLOCK)]
         targets.append(ROOT / "examples/demo-project/docs/requirements/raw"
                               "/2026-07-14-确认单v1-回执.md")
-        self.assertGreaterEqual(len(targets), 8)
+        self.assertGreaterEqual(len(targets), 7)
         for p in targets:
             J, broken = cq.machine_block(p.read_text(encoding="utf-8"))
             self.assertIsNone(J, p.name)
@@ -201,56 +192,76 @@ class TestTemplateExportsTheBlockingFlag(unittest.TestCase):
         self.assertIn("阻塞:!!q.dataset.first", re.sub(r"\s+", "", html))
 
 
-class TestFieldValueDoesNotCrossFieldBoundaries(unittest.TestCase):
-    """C2 回归:`[^\\s:：]*` 会让空字段捕获到下一个字段的标签名(填写人 → '部门'),
-    于是空落款被当成已署名,未署名告警(D10／规则 8 存在的唯一目的)静默失效。"""
+class TestMinimalMachineReceipt(unittest.TestCase):
+    """页面「复制回执」给出的最小形态 —— 标题一行 + 机读区,人读正文整个不在。
 
-    SIGNOFFS = {
-        # 正常签
-        "normal": ("## 填写信息\n填写人：王芳　部门：财务部　日期：2026-07-14 10:20\n",
-                   {"填写人": "王芳", "部门": "财务部", "日期": "2026-07-14 10:20"}),
-        # 空填写人 + 全角空格分隔 —— 以前 填写人 取到 '部门'
-        "empty_name": ("## 填写信息\n填写人：　部门：财务　日期：2026-08-27\n",
-                       {"填写人": "", "部门": "财务", "日期": "2026-08-27"}),
-        # HTML 导出器写的「（未填）」占位 —— 归为空,否则部门告警是死规则
-        "html_export": ("## 填写信息\n填写人：（未署名·导出自 HTML 确认单）"
-                        "　部门：（未填）　日期：2026-07-14 10:20\n\n"
-                        "<!-- 机读区 -->\n```json\n{}\n```\n",
-                        {"填写人": "（未署名·导出自 HTML 确认单）", "部门": "",
-                         "日期": "2026-07-14 10:20"}),
-        # 半角冒号 + 半角空格的旧格式(examples 里那份 2026-07-14 归档回执)
-        "legacy": ("## 填写信息\n填写人:李姐(问题1、3已电话确认过王芳)"
-                   " 部门:运营部 日期:2026-07-14\n",
-                   {"填写人": "李姐(问题1、3已电话确认过王芳)", "部门": "运营部",
-                    "日期": "2026-07-14"}),
-        # 空白 md 模板的下划线占位
-        "blank_template": ("## 填写信息\n填写人：____　部门：____　日期：____\n"
-                           "（留名字是为了日后能找回是谁定的）\n代答／转交说明：____\n",
-                           {"填写人": "", "部门": "", "日期": ""}),
-    }
+    为什么不复制整份 md: 人读正文是给业务在页面上核对用的,AI 读的是机读区;
+    把 md 再复制一遍只是让聊天窗多出几屏没人读的文本。风险则是「复制的东西
+    机检吃不下」—— 那会静默:AI 拿到一份判不出题的回执,只会以为业务什么都没答。
+    两份 fixture 取自同一次浏览器实跑(同一份答案,一个走「复制」、一个走「下载」)。
+    """
 
-    def test_values_do_not_leak_the_next_field_label(self):
-        for name, (section, want) in self.SIGNOFFS.items():
-            for key, exp in want.items():
-                self.assertEqual(cq.field_value(section, key), exp,
-                                 f"{name} / {key}")
+    MIN, FULL = "receipt-min-machine.md", "receipt-full-md.md"
 
-    def test_unsigned_regex_still_matches_the_html_placeholder(self):
-        """「（未填）」归为空,但「（未署名·导出自 HTML 确认单）」不能归为空 ——
-        它要被 UNSIGNED 匹配到,两条路径最终触发同一条 WARN。"""
-        v = cq.field_value(self.SIGNOFFS["html_export"][0], "填写人")
-        self.assertTrue(cq.UNSIGNED.search(v), v)
+    @staticmethod
+    def _verdicts(out):
+        return [l.strip() for l in out.split("\n") if l.strip().startswith(("✗", "△"))]
 
-    def test_empty_signoff_actually_triggers_the_unsigned_warning(self):
-        import tempfile
-        body = (FIX / "receipt-clean.md").read_text(encoding="utf-8").replace(
-            "填写人：王芳　部门：财务部", "填写人：　部门：财务部")
-        f = Path(tempfile.mkdtemp()) / "r.md"
-        f.write_text(body, encoding="utf-8")
-        p = subprocess.run([sys.executable, str(SCRIPT), str(f)],
-                           capture_output=True, text=True)
-        self.assertIn("回执未署名", p.stdout, p.stdout)
-        self.assertIn("待追认", p.stdout, p.stdout)
+    def test_the_minimal_form_really_has_no_human_readable_body(self):
+        """样本失效防护:哪天「复制」又变回复制整份 md,这条先红。"""
+        text = (FIX / self.MIN).read_text(encoding="utf-8")
+        for gone in ("## 第一部分", "## 第二部分", "### 问题", "【作答区】", "## 填写信息"):
+            self.assertNotIn(gone, text, f"最小形态里混进了人读正文: {gone}")
+        self.assertTrue(text.startswith("# "), text[:40])
+
+    def test_it_takes_the_structured_path(self):
+        code, out = run(self.MIN)
+        self.assertIn("按机读区判", out, out)
+        self.assertNotIn("未识别到任何", out, out)
+        self.assertNotIn("机检未覆盖", out, out)
+        self.assertEqual(code, 1, out)          # 矛盾未说明 → FAIL,与完整回执一致
+
+    def test_every_rule_that_has_an_object_still_fires(self):
+        _, out = run(self.MIN)
+        self.assertIn("第一部分有 1 条『未表态』", out, out)      # 规则 4
+        self.assertIn("问题 1 勾了『不清楚』", out, out)          # 规则 3
+        self.assertIn("判为不成立 1 道", out, out)                # 规则 6
+        self.assertIn("1 处矛盾业务未给说明", out, out)           # 规则 7
+        self.assertIn("题目 4 道", out, out)                      # 规则 1 看得见全部题目
+
+    def test_the_verdict_matches_the_full_downloaded_receipt(self):
+        """同一份答案,复制走的和下载走的必须判出同一个结论 —— 否则「复制」这条路
+        就是一条判得更松的暗道。(告警里的题目标题取自人读正文,最小形态没有它时
+        退化成只报题号;本对样本全部已答,两边逐字相同。)"""
+        self.assertEqual(self._verdicts(run(self.MIN)[1]),
+                         self._verdicts(run(self.FULL)[1]))
+        self.assertEqual(run(self.MIN)[0], run(self.FULL)[0])
+
+
+class TestTemplateCopiesTheMachineForm(unittest.TestCase):
+    """模板改回「复制整份 md」不会报错,只是让聊天窗多几屏文本、让机读区被淹掉。
+    这类回归必须有机检闸门。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = re.sub(r"\s+", "",
+                        (ROOT / "templates" / "questionnaire.html").read_text(encoding="utf-8"))
+
+    def test_copy_button_copies_the_machine_form(self):
+        self.assertIn("clipboard.writeText(buildMachineReceipt())", self.js)
+
+    def test_the_dialog_shows_what_the_button_copies(self):
+        """折叠区与复制按钮必须同源 —— 两处不同 = 业务复制到一份自己没看过的东西。"""
+        self.assertIn("getElementById('receipt').textContent=buildMachineReceipt()", self.js)
+
+    def test_download_still_writes_the_full_markdown(self):
+        """完整 md 不是被删掉,是降级成「存档」那条路。"""
+        self.assertIn("Blob([buildReceipt().md]", self.js)
+
+
+class TestLegacyArchivedReceiptStillPasses(unittest.TestCase):
+    """删掉落款两条规则后,旧手写归档回执(它是**有**落款的)必须仍然 0 WARN／0 FAIL
+    —— 少了检查只会更宽,这条测试盯的是「没有别的东西跟着一起坏掉」。"""
 
     def test_legacy_archived_receipt_does_not_regress(self):
         p = subprocess.run(
@@ -260,6 +271,27 @@ class TestFieldValueDoesNotCrossFieldBoundaries(unittest.TestCase):
             capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertIn("全部题目已作答", p.stdout)
+        self.assertIn("0 WARN / 0 FAIL", p.stdout)
+
+
+class TestSignoffRulesAreGone(unittest.TestCase):
+    """落款仪式已整体拆除(维护者裁定:找谁确认是开发者自知的事,回执即结论)。
+    这条测试是反向闸门 —— 谁把「未署名 → 【开发拟定·待追认】」那套降级悄悄搬回来,
+    这里先红。纪律内核(沉默≠同意、阻塞级不许用【开发拟定】顶过去)在 SKILL.md,
+    不在这两条机检规则里。"""
+
+    GONE = ("未署名", "待追认", "落款缺", "缺少『## 填写信息』落款区")
+
+    def test_no_receipt_triggers_a_signoff_verdict(self):
+        for f in sorted(FIX.glob("receipt-*.md")):
+            with self.subTest(f.name):
+                _, out = run(f.name)
+                for word in self.GONE:
+                    self.assertNotIn(word, out, f"{f.name}: {out}")
+
+    def test_the_checker_no_longer_carries_signoff_field_parsing(self):
+        for gone in ("field_value", "UNSIGNED", "FIELD_KEYS"):
+            self.assertFalse(hasattr(cq, gone), f"{gone} 还在 —— 落款解析没拆干净")
 
 
 if __name__ == "__main__":

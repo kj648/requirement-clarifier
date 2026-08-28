@@ -35,7 +35,12 @@ class TestRenderMd(unittest.TestCase):
     def test_has_answer_slot_and_signoff(self):
         self.assertIn("【作答区】", self.md)
         self.assertIn("## 填写信息", self.md)
-        self.assertIn("填写人：", self.md)
+        self.assertIn("日期：____", self.md)
+
+    def test_no_signoff_ceremony_is_asked_for(self):
+        """填写人/部门已整体拆除 —— 单子不再向业务索要身份信息。"""
+        for gone in ("填写人", "部门：", "署名", "待追认"):
+            self.assertNotIn(gone, self.md, f"落款仪式残留: {gone}")
 
     def test_blocking_questions_marked(self):
         line = next(l for l in self.md.splitlines() if l.startswith("### 问题 1"))
@@ -69,9 +74,7 @@ class TestRenderMd(unittest.TestCase):
                 out.append("☑ " + line[2:]); ticked = True
                 continue
             out.append(line)
-        text = "\n".join(out).replace(
-            "填写人：____　部门：____　日期：____",
-            "填写人：王芳　部门：财务部　日期：2026-07-14")
+        text = "\n".join(out).replace("日期：____", "日期：2026-07-14")
         f = _P(tempfile.mkdtemp()) / "r.md"
         f.write_text(text, encoding="utf-8")
         p = subprocess.run(

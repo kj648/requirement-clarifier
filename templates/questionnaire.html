@@ -260,11 +260,10 @@ textarea::placeholder,input::placeholder{color:#A9B3B7}
 .addrow{margin-top:7px;font-size:var(--t-cap);background:none;border:1px dashed var(--rule);color:var(--ink-70);padding:5px 11px;cursor:pointer;font-family:inherit}
 .addrow:hover{border-color:var(--ink-45);color:var(--ink)}
 
-/* 落款 */
+/* 填写信息 */
 .signoff{background:var(--sheet);border:1px solid var(--rule);border-top:3px solid var(--ink);padding:20px var(--s-6);margin-top:40px}
-.signoff h2{font-family:var(--serif);font-size:var(--t-q);margin:0 0 var(--s-1)}
-.signoff .why{font-size:var(--t-cap);color:var(--red);margin:0 0 var(--s-4)}
-.sign-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:16px;align-items:end}
+.signoff h2{font-family:var(--serif);font-size:var(--t-q);margin:0 0 var(--s-3)}
+.sign-grid{display:grid;grid-template-columns:minmax(0,260px);gap:16px;align-items:end}
 .fld label{display:block;font-size:var(--t-label);font-family:var(--mono);letter-spacing:.08em;color:var(--ink-45);margin-bottom:5px}
 .fld label .req{color:var(--red)}
 .stamp{
@@ -291,8 +290,10 @@ dialog::backdrop{background:rgba(24,35,43,.45)}
   margin:0;max-height:52vh;overflow:auto;padding:var(--s-4) 20px;font-family:var(--mono);
   font-size:var(--t-label);line-height:1.7;white-space:pre-wrap;background:#fff;color:var(--ink);
 }
-.dlg-ft{padding:var(--s-3) 20px;border-top:1px solid var(--rule);display:flex;gap:10px;justify-content:flex-end;align-items:center}
-.dlg-ft .note{margin-right:auto;font-size:var(--t-label);color:var(--ink-70)}
+/* 窄屏下说明文案会把两个按钮挤成一字一行 —— 底栏必须允许换行,按钮不许被压。 */
+.dlg-ft{padding:var(--s-3) 20px;border-top:1px solid var(--rule);display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+.dlg-ft .note{margin-right:auto;flex:1 1 18rem;font-size:var(--t-label);color:var(--ink-70)}
+.dlg-ft .btn{flex:0 0 auto;white-space:nowrap}
 
 /* 逐条核对 */
 .ledger td.chk,.ledger th.chk{width:118px;background:#fff}
@@ -347,8 +348,7 @@ dialog::backdrop{background:rgba(24,35,43,.45)}
 .rc-card.bad b{color:var(--red)}
 .rc-card.warn{border-color:var(--amber);background:#FBF3D9}
 .rc-card.warn b{color:var(--amber)}
-.rc-sign{font-size:var(--t-sub);padding:9px var(--s-3);background:var(--sheet-2);border-left:2px solid var(--green);margin-bottom:14px}
-.rc-sign.unsigned{border-left-color:var(--red);background:var(--red-soft);color:var(--ink)}
+.rc-sign{font-size:var(--t-sub);padding:9px var(--s-3);background:var(--sheet-2);border-left:2px solid var(--rule);color:var(--ink-70);margin-bottom:14px}
 .rc-clash{font-size:var(--t-sub);padding:10px var(--s-3);border:1px solid var(--red);background:var(--red-soft);margin-bottom:14px;line-height:1.7}
 .rc-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule)}
 .rc-list li{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:10px 2px;border-bottom:1px solid var(--rule-2)}
@@ -393,8 +393,6 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
 .opt.other{border-style:dashed;color:var(--ink-70)}
 .opt.other:has(input:checked){color:var(--ink);border-style:solid}
 
-.why2{font-size:var(--t-cap);color:var(--ink-70);margin:0 0 var(--s-4);max-width:62ch}
-.sign-grid{grid-template-columns:1fr 1fr 1fr}
 #s-date{background:var(--sheet-2);color:var(--ink-70)}
 
 .rev{display:block;margin-top:var(--s-1);color:var(--ink-45);font-size:var(--t-label);font-family:var(--mono)}
@@ -433,7 +431,6 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
      这里不再单独铺横向滚动布局 —— 展开时以浮层盖住正文是可接受的。 */
   .masthead{flex-direction:column-reverse;gap:14px}
   .seal{align-self:flex-start}
-  .sign-grid{grid-template-columns:1fr 1fr}
   .stamp{grid-column:1/-1}
   .status-text{order:3;flex-basis:100%}
 }
@@ -514,8 +511,8 @@ input.carried{border-color:var(--blue);background:#F4F8FC}
     </details>
   </div>
   <div class="dlg-ft">
-    <span class="note" id="dlgNote">下载失败（如在微信里打开）就点「复制全文」，粘贴到聊天窗发回。</span>
-    <button class="btn ghost" id="btnCopy" type="button" onclick="copyReceipt(this)">复制全文</button>
+    <span class="note" id="dlgNote">「复制回执」复制的是给 AI 的机读回执，粘贴到您和开发的对话里发回即可。</span>
+    <button class="btn ghost" id="btnCopy" type="button" onclick="copyReceipt(this)">复制回执</button>
     <button class="btn" id="btnDownload" type="button" onclick="downloadReceipt()">下载 .md 文件</button>
   </div>
 </dialog>
@@ -811,15 +808,12 @@ function renderPart2(){
     }).join('');
 }
 
+/* 填写人／部门已整体拆除:找谁确认是开发者自己知道的事,回执本身就是结论,
+   页面不该再向业务索要身份信息。留下的只有导出时间(自动)与给开发的补充说明。 */
 function renderSignoff(){
   document.getElementById('signoff').innerHTML = `
     <h2>${esc(T('sign_title'))}</h2>
-    <p class="why2">${esc(T('sign_why'))}</p>
     <div class="sign-grid">
-      <div class="fld"><label for="s-name">${esc(T('sign_name'))}</label>
-        <input type="text" id="s-name" placeholder="${esc(T('sign_name_ph'))}"></div>
-      <div class="fld"><label for="s-dept">${esc(T('sign_dept'))}</label>
-        <input type="text" id="s-dept" placeholder="${esc(T('sign_dept_ph'))}"></div>
       <div class="fld"><label>${esc(T('sign_date'))}</label>
         <input type="text" id="s-date" readonly></div>
     </div>
@@ -1064,7 +1058,6 @@ function refreshAll(){
   refreshPart1(); refreshConditions(); refreshNA(); refreshCarry(); refreshClash();
   refreshDemos(); refreshStatus(); refreshDecideFilter(); buildDecideRow();
   document.getElementById('s-date').value = stamp();
-  try{ localStorage.setItem('rc-filler', txt('s-name')); }catch(e){}
 }
 document.addEventListener('input', refreshAll);
 document.addEventListener('change', refreshAll);
@@ -1081,7 +1074,6 @@ QS.forEach(q=>new IntersectionObserver(es=>es.forEach(e=>{
 function buildReceipt(){
   const L=[], J={单据:DATA.doc.id, 轮次:DATA.doc.round, 代码依据:DATA.doc.code_rev,
                  导出时间:stamp(), 第一部分:[], 题目:[]};
-  const name=txt('s-name');
   const denies=QS.filter(denied).map(q=>q.dataset.no);
   const unans=QS.filter(q=>!answered(q)).map(q=>q.dataset.no);
   const p1done=P1.filter(i=>val(`p1-${i}`)).length;
@@ -1097,7 +1089,6 @@ function buildReceipt(){
   const bizQ = byDecide('biz'), devQ = byDecide('dev');
   L.push(T('rc_split', {biz: bizQ.length, biz_done: bizQ.filter(answered).length,
                         dev: devQ.length, dev_done: devQ.filter(answered).length}));
-  if(!name) L.push(T('rc_unsigned'));
   const cls=clashes();
   if(cls.length){
     L.push('');
@@ -1206,17 +1197,26 @@ function buildReceipt(){
 
   L.push('');
   L.push(T('rc_sign_head'));
-  L.push(T('rc_sign_line', {name: name||T('rc_unsigned_ph'),
-    dept: txt('s-dept')||T('rc_unfilled'), date: stamp()}));
+  L.push(T('rc_sign_line', {date: stamp()}));
   if(txt('s-relay')) L.push(T('rc_relay', {v: txt('s-relay')}));
-  J.落款={填写人:name, 部门:txt('s-dept'), 导出时间:stamp(), 转交:txt('s-relay'),
-          已署名:!!name};
+  /* 落款只剩两件事:页面自动记的导出时间,和业务写给开发的补充说明。
+     键名是与 check_questionnaire.py 的协议,改名要连着 checker 一起改。 */
+  J.落款={导出时间:stamp(), 补充说明:txt('s-relay')};
   L.push('');
   L.push(T('rc_machine_note'));
   L.push('```json');
   L.push(JSON.stringify(J));
   L.push('```');
-  return L.join('\n');
+  return {md: L.join('\n'), J: J};
+}
+
+/* 发回给 AI 的最小形态:标题一行 + 机读区。
+   为什么不是整份 md —— 人读正文是给业务在页面上核对用的,AI 读的是机读区;
+   把 md 再复制一遍只是让聊天窗里多出几屏没人读的文本。机检对这份最小形态
+   照走结构化路径(题目/核对/矛盾结构都在机读区里),七条规则一条不少。 */
+function buildMachineReceipt(){
+  return [T('rc_title', {title: DATA.doc.title, round: DATA.doc.round}),
+          '```json', JSON.stringify(buildReceipt().J), '```'].join('\n');
 }
 
 const dlg=document.getElementById('dlg');
@@ -1224,9 +1224,8 @@ const dlg=document.getElementById('dlg');
    const esc 会让整段 <script> 直接 SyntaxError。 */
 
 /* 人读回执：业务不懂 markdown——预览就不该是 markdown。
-   摘要给填写人核对，原始文本折叠起来留给开发。 */
+   摘要给业务核对，要发回的机读文本折叠起来留给开发。 */
 function renderPreview(){
-  const name=txt('s-name'), dept=txt('s-dept');
   const den=QS.filter(denied), un=QS.filter(q=>!answered(q));
   const p1done=P1.filter(i=>val(`p1-${i}`)).length, cls=clashes();
   /* variant: ''（常规态白底）｜ 'warn'（琥珀·成立但没验过，如核对未齐）｜
@@ -1243,10 +1242,8 @@ function renderPreview(){
     + (cls.length?card(cls.length, esc(T('pv_clash')), 'bad'):'')
     + '</div>';
 
-  h += name
-    ? `<div class="rc-sign">${esc(T('pv_sign'))}<b>${esc(name)}</b>${
-        dept?' · '+esc(dept):''}${esc(T('pv_exported_at', {now: stamp()}))}</div>`
-    : `<div class="rc-sign unsigned">${esc(T('pv_unsigned'))}</div>`;
+  /* 署名条已拆除 —— 剩导出时间这一行,它是页面自己记的,不问业务要。 */
+  h += `<div class="rc-sign">${esc(T('pv_exported_at', {now: stamp()}))}</div>`;
 
   cls.forEach(c=>{
     const ta=c.querySelector('textarea'), said=ta&&ta.value.trim();
@@ -1283,18 +1280,19 @@ function renderPreview(){
 }
 function openReceipt(){
   document.getElementById('rcBody').innerHTML = renderPreview();
-  document.getElementById('receipt').textContent = buildReceipt();
+  /* 折叠区里放的就是「复制」会复制的那份文本 —— 两处不同会让业务复制到
+     一份自己没看过的东西。完整 md 只走「下载」那条路(存档用)。 */
+  document.getElementById('receipt').textContent = buildMachineReceipt();
   dlg.showModal();
 }
 function downloadReceipt(){
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([buildReceipt()],{type:'text/markdown;charset=utf-8'}));
-  a.download=`${DATA.doc.id}-${T('rc_file_word')}-${txt('s-name')||T('rc_file_unsigned')}`
-           + `-${stamp().slice(0,10)}.md`;
+  a.href=URL.createObjectURL(new Blob([buildReceipt().md],{type:'text/markdown;charset=utf-8'}));
+  a.download=`${DATA.doc.id}-${T('rc_file_word')}-${stamp().slice(0,10)}.md`;
   a.click(); URL.revokeObjectURL(a.href);
 }
 async function copyReceipt(btn){
-  try{ await navigator.clipboard.writeText(buildReceipt()); btn.textContent=T('copied');
+  try{ await navigator.clipboard.writeText(buildMachineReceipt()); btn.textContent=T('copied');
        setTimeout(()=>btn.textContent=T('copy'),1800); }
   catch(e){ const r=document.createRange(); r.selectNodeContents(document.getElementById('receipt'));
     getSelection().removeAllRanges(); getSelection().addRange(r); btn.textContent=T('copy_manual'); }
@@ -1318,7 +1316,6 @@ QS.forEach(q=>{
    + `<div class="fld"><input type="text" id="other-${no}" placeholder="${esc(T('other_ph'))}"></div></div>`);
 });
 
-try{ document.getElementById('s-name').value = localStorage.getItem('rc-filler')||''; }catch(e){}
 refreshAll();
 </script>
 </body>

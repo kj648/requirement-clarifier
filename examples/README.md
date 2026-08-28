@@ -8,16 +8,17 @@
 |---|---|---|
 | 1. 原话落盘 | [raw/2026-07-10-李姐微信语音转述.md](demo-project/docs/requirements/raw/2026-07-10-李姐微信语音转述.md) | 逐字归档,不改写。注意原话里全是模糊点:"审完了就把钱打了呗""别一天打好几遍""过几天再跑一次" |
 | 2. 挑漏洞 → 出确认单 | [raw/2026-07-14-确认单v1-回执.md](demo-project/docs/requirements/raw/2026-07-14-确认单v1-回执.md) | 选择题化、每题标 `decide`（业务定／开发拟定，**不标具体回答人**——给谁去问是开发的事）、给"我不清楚"台阶、阻塞级标注。此文件是**业务回填后的回执**。注意它是 2026-07-14 的历史归档，逐题还写着"建议由 XX 回答"——那是当时的做法，原样保留（改它等于伪造归档）；现行做法见 `templates/questionnaire.schema.json` 的 `decide` |
-| 3. 验收答案 | 同上,细看 3 个作答区 | 回答的典型脏法:问题 1 混入新需求(周报表);问题 2 只给方向("看着办");落款是李姐代签 |
+| 3. 验收答案 | 同上,细看 3 个作答区 | 回答的典型脏法:问题 1 混入新需求(周报表);问题 2 只给方向("看着办");回执是李姐代答的,而决定 1、3 的规则 owner 是王芳 |
 | 4. 成型 | [specs/报销打款.md](demo-project/docs/requirements/specs/报销打款.md) | 三档标签各就各位:干净回答→【业务确认】带日期;"看着办"→【开发拟定】送过目;开发自己的记忆→【假设】待验证。每条决定带证据引用,末尾贴核验摘要 |
-| 5. 沉淀 | [context.md](demo-project/docs/requirements/context.md) / [changes.md](demo-project/docs/requirements/changes.md) / [parking.md](demo-project/docs/requirements/parking.md) | 黑话、干系人、代签风险入 context;剥离的周报表进停车场而不是无声合并进 spec |
+| 5. 沉淀 | [context.md](demo-project/docs/requirements/context.md) / [changes.md](demo-project/docs/requirements/changes.md) / [parking.md](demo-project/docs/requirements/parking.md) | 黑话、干系人、代答风险入 context;剥离的周报表进停车场而不是无声合并进 spec |
 
 ## 亲手跑一遍机检
 
 在 `examples/demo-project/` 目录下(脚本路径按你的实际安装位置调整):
 
 ```bash
-# 1. 回执机检:未答题/缺落款/模板残留(机械约束,先于 AI 验收)
+# 1. 回执机检:未答题/业务证伪的题/矛盾未说明/模板残留(机械约束,先于 AI 验收)
+#    注意:这是**开发者/AI 自己**跑的一步,不是让业务去跑的
 python3 ../../scripts/check_questionnaire.py docs/requirements/raw/2026-07-14-确认单v1-回执.md
 # 预期:✓ 机检通过(注意:机检通过 ≠ 验收完成,新需求混入、"看着办"这类判断题留给 AI)
 
@@ -34,7 +35,7 @@ python3 ../../scripts/verify_evidence.py docs/requirements/specs/报销打款.md
 
 真实项目永远收不干净,示例也如实呈现:
 
-- **代签风险**:决定 1、2 的规则 owner 是王芳,但落款是李姐——spec 待办里挂着"请王芳本人补落款",没有假装闭环。
+- **代答风险**:决定 1、2 的规则 owner 是王芳,回执却是李姐代答的(她在回执里写明"问题1、3已电话确认过王芳")——spec 待办里挂着"请王芳本人在 v2 过目",没有假装闭环。
 - **未验证假设**:"代发批次通道可复用"标着【假设】,harness 会一直点名它,直到查码核实。
 
 这正是铁律 2(暴露未知 > 假装完整)的样子。

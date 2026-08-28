@@ -30,7 +30,7 @@ Interactive questionnaire   — single-file HTML the business fills by clicking;
 Answer acceptance           — grade answer quality, detect conflicts with
       ↓                       earlier decisions, split out smuggled new asks
 Traceable specification     — every decision tagged 【Confirmed】/【Dev-default】/
-      ↓                       【Assumption】 with a signed receipt behind it
+      ↓                       【Assumption】 with an archived receipt behind it
 Evidence verification + CI  — citations are machine-checked against sources
 ```
 
@@ -53,7 +53,7 @@ The person who *answers* the questions never needs to understand markdown, git, 
       "partially-approved claims wait for a human" — who pays that claim?
 
 Resulting spec: 3 ×【Confirmed】 · 3 ×【Dev-default】 · 4 ×【Assumption】
-every one traceable to a signed receipt
+every one traceable to an archived receipt
 ```
 
 ## What it looks like
@@ -70,10 +70,10 @@ Every question carries its **evidence tier**. A question with no source is flagg
 
 Most agent skills are "the author felt this prompt works". This one ships with its own harness:
 
-- ✅ **133 regression tests** (Python stdlib `unittest`, zero third-party deps)
+- ✅ **189 regression tests** (Python stdlib `unittest`, zero third-party deps)
 - ✅ **Evidence verification** — every `> 证据: path:line | "quote"` citation is checked against the actual source file; broken citations fail the build
 - ✅ **Questionnaire contract validation** — dangling dependencies, asymmetric branches, advice-wording on policy questions, blocking questions without worked numbers: all rejected before the sheet ships
-- ✅ **Receipt machine-check** — unanswered blocking questions, unsigned receipts, unresolved contradictions are caught before answers get merged
+- ✅ **Receipt machine-check** — seven rules: unanswered blocking questions, unresolved contradictions, unchecked "what we understood" lines, questions the business disproved, "I don't know" without a named person, multi-select slips, leftover internal notes — all caught before answers get merged
 - ✅ **Template JS syntax + contract probe** — the interactive sheet's script is extracted and checked in CI, because a syntax error means the business sees a blank page
 - ✅ **7-step CI gate** on every push
 
@@ -131,7 +131,7 @@ Interview-your-plan skills (grill-me, brainstorming, …) interrogate **you, the
 - **Never recommends an answer on policy/accounting questions** — a pre-checked default on "when does a claim become payable?" is the developer deciding on the business's behalf, with their signature on it
 - **Every question carries its evidence** (verbatim quote / code citation / openly marked "unsupported"), and unsupported questions get a falsification exit instead of forcing a choice among wrong options
 - **Every worked example is computed per branch** — the business compares 70.0% vs 63.6% vs 50.0%, not abstractions
-- **The receipt is a provenance record**: signed, dated, machine-checked, archived
+- **The receipt is a provenance record**: timestamped, machine-checked, archived
 
 ## A complete worked example
 
