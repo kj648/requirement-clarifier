@@ -4,7 +4,7 @@ description: 帮开发者把没法直接开工的需求——业务方口述、�
 compatibility: opencode, claude-code, any-opencode-compatible-agent
 license: MIT
 metadata:
-  version: 2.9.0
+  version: 2.10.0
   repository: https://github.com/kj648/requirement-clarifier
 ---
 
