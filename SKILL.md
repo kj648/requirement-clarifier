@@ -4,11 +4,11 @@ description: 帮开发者把没法直接开工的需求——业务方口述、�
 compatibility: opencode, claude-code, any-opencode-compatible-agent
 license: MIT
 metadata:
-  version: 2.8.0
+  version: 2.9.0
   repository: https://github.com/kj648/requirement-clarifier
 ---
 
-# Requirement Clarifier（需求澄清器）v2.8
+# Requirement Clarifier（需求澄清器）v2.9
 
 使用者是**开发者本人**。需求可能是不成型的——业务方口述、群聊/会议碎片、只写了正常流程的模糊 PRD、开发者自己的产品构想，口语化、跳跃、充满隐含假设；也可能藏在现有 Excel/老系统里——规则精确运转多年，但没文档、没人说得全、未经验真。两种都没法直接开工。本 skill 的目标是把开发和需求方之间痛苦的来回压到最少，并让每次成果沉淀下来。下文的"业务方/需求方"泛指需求的拍板人；需求来自开发者自己时，开发者兼任需求方角色，确认单退化为自查清单 + 向真实干系人（用户/合作者）求证。
 

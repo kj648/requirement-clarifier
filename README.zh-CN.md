@@ -162,7 +162,7 @@ requirement-clarifier/
 │   ├── questionnaire-template.md     # 由 json 生成的 md 示例
 │   ├── rules-template.md             # 逆向规则文档骨架
 │   ├── context-template.md / spec-template.md / confirmation-template.md
-├── tests/                            # 133 条回归测试 + golden fixtures
+├── tests/                            # 189 条回归测试 + golden fixtures
 ├── examples/demo-project/            # 完整走查案例
 └── .github/workflows/                # ci.yml（7 步门禁）+ release.yml
 ```
