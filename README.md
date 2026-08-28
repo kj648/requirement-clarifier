@@ -58,7 +58,7 @@ every one traceable to an archived receipt
 
 ## What it looks like
 
-The generated confirmation sheet — ledger-paper look, progress gate, per-item verification of "what we understood":
+The generated confirmation sheet — clean white-card look, hover-expanding question index, sticky progress bar, per-item verification of "what we understood":
 
 ![Confirmation sheet](docs/assets/questionnaire-hero.png)
 

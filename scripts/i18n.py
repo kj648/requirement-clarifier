@@ -45,10 +45,19 @@ STRINGS = {
         "rev_note": "代码依据取自 {rev} —— 这之后代码若有变动，结论需重新确认",
         "seal_total": "共 {n} 题",
         "page_title": "需求确认单 · {title}",
+        # howto 单段版仍被保留（键只增不改），但 HTML 侧自 redesign 起改用
+        # howto_label + howto_1..4 的四条分栏版 —— 一段 130 字的说明没人读完，
+        # 拆成编号条目业务才扫得动。
         "howto": "第一部分请<b>逐条核对</b>；第二部分请<b>点选</b>选项、必要处补充说明。"
                  "标「业务定」的题必须您自己拍板；标「开发拟定 · 请过目」的题开发已给默认规则，"
                  "<b>过目一下有无异议</b>即可——不确定该找谁定，先转给知情的人。"
                  "答不了的题可以留空先发，剩下的转交别人接着填。填完点底部<b>导出回执</b>发回即可。",
+        "howto_label": "怎么填",
+        "howto_1": "第一部分请<b>逐条核对</b>；第二部分请<b>点选</b>选项、必要处补充说明。",
+        "howto_2": "标「业务定」的题必须您自己拍板；标「开发拟定 · 请过目」的题开发已给默认规则，"
+                   "<b>过目一下有无异议</b>即可——不确定该找谁定，先转给知情的人。",
+        "howto_3": "答不了的题可以留空先发，剩下的转交别人接着填。",
+        "howto_4": "填完点底部<b>导出回执</b>发回即可。",
 
         # ── 第一部分 ────────────────────────────────────────────
         "p1_title": "第一部分 · 我们理解的",
@@ -267,6 +276,16 @@ STRINGS = {
                  "rule — <b>just look it over</b>. If you are not the right person to decide, "
                  "pass the sheet to whoever knows. You can leave questions blank and send what "
                  "you have. When you are done, hit <b>Export receipt</b> at the bottom.",
+        "howto_label": "How to fill this in",
+        "howto_1": "In part 1, please <b>check every line</b>. In part 2, <b>pick an option</b> "
+                   "and add a note where it matters.",
+        "howto_2": "Questions marked “You decide” are yours to settle; the ones marked "
+                   "“Dev proposal · please review” already have a default rule — "
+                   "<b>just look it over</b>. If you are not the right person to decide, "
+                   "pass the sheet to whoever knows.",
+        "howto_3": "You can leave questions blank and send what you have; pass the rest "
+                   "to someone else.",
+        "howto_4": "When you are done, hit <b>Export receipt</b> at the bottom.",
 
         # ── part 1 ─────────────────────────────────────────────
         "p1_title": "Part 1 · What we understand",
