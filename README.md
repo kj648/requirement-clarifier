@@ -36,6 +36,26 @@ Evidence verification + CI  — citations are machine-checked against sources
 
 The person who *answers* the questions never needs to understand markdown, git, or AI. They get a single HTML file that works offline, in a corporate intranet, or inside WeChat — and exports a machine-checkable receipt.
 
+## Ten-second version
+
+**In** — one voice memo from the ops side:
+
+> "Once a reimbursement claim is approved, just have the system pay it out automatically — stop making finance do the bank transfers by hand."
+
+**Out** — the skill finds what nobody said, before any code exists:
+
+```text
+4 questions the business must settle first:
+  Q1  When does a claim become "payable" — on approval, or after finance review?   [blocking]
+  Q3  A claim gets PARTIALLY approved. Pay the approved amount, or hold for a human?
+      ⚠ unsupported — this scenario was never mentioned; one click to falsify it
+  Q2×Q3 contradiction caught while filling: "daily auto-batch" collides with
+      "partially-approved claims wait for a human" — who pays that claim?
+
+Resulting spec: 3 ×【Confirmed】 · 3 ×【Dev-default】 · 4 ×【Assumption】
+every one traceable to a signed receipt
+```
+
 ## What it looks like
 
 The generated confirmation sheet — ledger-paper look, progress gate, per-item verification of "what we understood":
@@ -89,9 +109,16 @@ The skill takes over: archives the raw material, runs the blind-spot checklist, 
 
 ## Modes
 
-| Mode | Trigger | Output |
+**The core loop is one mode — Clarify.** Vague requirement in, blind-spot questions out, business confirms, traceable spec lands. Start there.
+
+| Core | Trigger | Output |
 |---|---|---|
 | **Clarify** | "help me sort out this requirement" | question list + HTML questionnaire + spec |
+
+Everything else is an advanced mode you grow into:
+
+| Advanced | Trigger | Output |
+|---|---|---|
 | **Change** | "the business changed their mind about X" | impact analysis + rework-cost confirmation |
 | **Context** | "note that '单子' means purchase order" | updated business-context file |
 | **Reverse-engineer** | "migrate this legacy Excel / old system" | rule doc with owner sign-off slots + regression against history |
