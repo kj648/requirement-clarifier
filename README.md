@@ -70,7 +70,7 @@ Every question carries its **evidence tier**. A question with no source is flagg
 
 Most agent skills are "the author felt this prompt works". This one ships with its own harness:
 
-- ✅ **189 regression tests** (Python stdlib `unittest`, zero third-party deps)
+- ✅ **195 regression tests** (Python stdlib `unittest`, zero third-party deps)
 - ✅ **Evidence verification** — every `> 证据: path:line | "quote"` citation is checked against the actual source file; broken citations fail the build
 - ✅ **Questionnaire contract validation** — dangling dependencies, asymmetric branches, advice-wording on policy questions, blocking questions without worked numbers: all rejected before the sheet ships
 - ✅ **Receipt machine-check** — seven rules: unanswered blocking questions, unresolved contradictions, unchecked "what we understood" lines, questions the business disproved, "I don't know" without a named person, multi-select slips, leftover internal notes — all caught before answers get merged

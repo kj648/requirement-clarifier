@@ -141,6 +141,13 @@ STRINGS = {
         # ── 进度条 / 导出条 / 弹窗 / 索引 ───────────────────────
         "status_init": "尚未开始",
         "jump_next": "跳到下一道未答",
+        # ── 草稿自动保存(只存在这台电脑的这个浏览器里)────────────
+        "autosaved": "已自动保存 {when}",
+        "autosave_off": "这个浏览器环境无法自动保存，请一次填完再导出",
+        "restore_note": "已恢复 {when} 在这台电脑上保存的填写，接着填即可。"
+                        "这份保存只在这台电脑的这个浏览器里，换电脑看不到。",
+        "restore_clear": "清空重填",
+        "restore_clear_confirm": "确定清空保存在这台电脑上的全部答案？清空后找不回来。",
         "rail_title": "题号索引",
         "rail_open": "题号索引 ▶",
         "rail_close": "◀ 收起",
@@ -163,6 +170,8 @@ STRINGS = {
         "copied": "已复制 ✓",
         "copy_manual": "已选中，请按 ⌘C",
         "download": "下载 .md 文件",
+        "downloaded": "已开始下载 ✓",
+        "download_opened": "已在新标签页打开，请另存为 .md 文件",
         "filter_lead": "先看",
         "filter_all": "全部",
         "filter_biz": "必须业务定",
@@ -379,6 +388,13 @@ STRINGS = {
         # ── status bar / dock / dialog / index ─────────────────
         "status_init": "Not started",
         "jump_next": "Jump to next unanswered",
+        # ── draft autosave (lives only in this browser on this computer) ──
+        "autosaved": "Saved {when}",
+        "autosave_off": "This browser can't save your progress — please finish and export in one sitting",
+        "restore_note": "Restored what you filled in on this computer at {when} — just carry on. "
+                        "It is kept only in this browser on this computer.",
+        "restore_clear": "Start over",
+        "restore_clear_confirm": "Clear every answer saved on this computer? They can't be recovered.",
         "rail_title": "Question index",
         "rail_open": "Questions ▶",
         "rail_close": "◀ Hide",
@@ -402,6 +418,8 @@ STRINGS = {
         "copied": "Copied ✓",
         "copy_manual": "Selected — press ⌘C",
         "download": "Download .md",
+        "downloaded": "Download started ✓",
+        "download_opened": "Opened in a new tab — save it as a .md file",
         "filter_lead": "Show",
         "filter_all": "All",
         "filter_biz": "Yours to decide",

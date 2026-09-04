@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.11.0] - 2026-09-04
+
+**确认单导出与草稿的环境兜底。** 三个问题都来自「模板只按 Chrome file:// 那条最顺的路写」——
+业务实际用的是 Edge / QQ 浏览器、Teams/SharePoint 的文件预览、Claude 的内置预览（data:）：
+
+- 「复制回执」改为同步路径优先（弹窗内临时 textarea + `execCommand('copy')`），Clipboard API
+  只做兜底——后者在沙箱 iframe / data: 预览里不存在或直接拒绝，在部分国产浏览器里首次调用
+  会弹权限、表现为「要点两次」。两条路都不通时，展开折叠区并选中文本再提示 ⌘C（原来选中的是
+  折叠着看不见的文本）
+- 「下载 .md」不再在 `a.click()` 后同步 `revokeObjectURL`——Safari/Firefox 及带独立下载管理器
+  的浏览器会在真正读 blob 前就拿到一个已释放的 URL，下载静默失败；改为延迟释放、锚点挂进弹窗
+  （showModal 期间弹窗外节点 inert）、按钮给「已开始下载 ✓」反馈；不认 `download` 属性的
+  WebView 退回新标签页打开
+- **草稿自动保存**：每次改动写进 localStorage（键 `rc-draft:<doc.id>:r<round>`），再打开同一份
+  单子自动恢复并在页首提示「已恢复 xx 保存的填写」，可一键清空重填；状态条常显「已自动保存
+  HH:MM」。localStorage 不可用的环境（data:/沙箱预览、隐私模式配额）明示「无法自动保存」，
+  不装作存了。局限：只在同一台电脑的同一浏览器内
+- i18n 新增 downloaded / download_opened / autosaved / autosave_off / restore_note /
+  restore_clear / restore_clear_confirm（中英同增）；新增 6 条模板回归测试锁住上述兜底
+
 ## [2.10.0] - 2026-08-28
 
 **确认单换肤（Claude Design 复刻）。** 视觉与交互按设计稿重做，功能契约一条未动

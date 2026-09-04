@@ -248,7 +248,11 @@ class TestTemplateCopiesTheMachineForm(unittest.TestCase):
                         (ROOT / "templates" / "questionnaire.html").read_text(encoding="utf-8"))
 
     def test_copy_button_copies_the_machine_form(self):
-        self.assertIn("clipboard.writeText(buildMachineReceipt())", self.js)
+        """复制走两条路(同步 execCommand 优先,Clipboard API 兜底),两条路喂的必须是
+        同一份 buildMachineReceipt() 的文本。"""
+        self.assertIn("asyncfunctioncopyReceipt(btn){consts=buildMachineReceipt();letok=copySync(s);",
+                      self.js)
+        self.assertIn("navigator.clipboard.writeText(s)", self.js)
 
     def test_the_dialog_shows_what_the_button_copies(self):
         """折叠区与复制按钮必须同源 —— 两处不同 = 业务复制到一份自己没看过的东西。"""

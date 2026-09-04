@@ -120,6 +120,14 @@ h1{
 .status-text .num{font-family:var(--mono);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 .status-text .warn{color:var(--red);font-weight:600}
 .status-text .amb{color:var(--amber);font-weight:600}
+.saved{font-family:var(--mono);font-size:11px;color:var(--ink-45);white-space:nowrap}
+.restore{
+  margin:var(--s-3) 0 0;display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;
+  background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--blue);
+  border-radius:var(--r-card);padding:10px var(--s-4);font-size:var(--t-cap);color:var(--ink-70);line-height:1.6;
+}
+.restore span{flex:1 1 20rem}
+.restore[hidden]{display:none}
 .btn{
   font:inherit;font-size:var(--t-cap);font-weight:600;
   background:var(--blue);color:#fff;border:1px solid var(--blue);
@@ -507,7 +515,7 @@ input.carried{border-color:var(--blue-line);background:var(--blue-soft)}
   body{background:#fff;font-size:16px;color:#000}
   /* @page 已经给了纸张边距;.wrap 屏幕上留的 padding 叠加上去会在末页留出大段纯空白 */
   .wrap{padding:0;max-width:none}
-  .statusbar,.dock,.rail,.rail-toggle,.howto,.deny{display:none!important}
+  .statusbar,.dock,.rail,.rail-toggle,.howto,.restore,.deny{display:none!important}
   .ev summary::after{display:none!important}
   .q,.masthead,.signoff,.p1-row,.demo{break-inside:avoid;box-shadow:none!important}
   .cond,.ev,.ev-b,.coords{display:block!important}
@@ -541,9 +549,11 @@ input.carried{border-color:var(--blue-line);background:var(--blue-soft)}
 
 <header class="masthead" id="masthead"></header>
 <div class="howto" id="howto"></div>
+<div class="restore" id="restoreBar" hidden></div>
 <div class="statusbar">
   <div class="meter"><i id="meter"></i></div>
   <div class="status-text" id="statusText">尚未开始</div>
+  <span class="saved" id="savedAt"></span>
   <button class="btn ghost" type="button" id="btnJumpNext" onclick="jumpNext()">跳到下一道未答</button>
   <div class="whorow" id="whoRow"></div>
 </div>
@@ -579,7 +589,7 @@ input.carried{border-color:var(--blue-line);background:var(--blue-soft)}
   <div class="dlg-ft">
     <span class="note" id="dlgNote">「复制回执」复制的是给 AI 的机读回执，粘贴到您和开发的对话里发回即可。</span>
     <button class="btn ghost" id="btnCopy" type="button" onclick="copyReceipt(this)">复制回执</button>
-    <button class="btn" id="btnDownload" type="button" onclick="downloadReceipt()">下载 .md 文件</button>
+    <button class="btn" id="btnDownload" type="button" onclick="downloadReceipt(this)">下载 .md 文件</button>
   </div>
 </dialog>
 
@@ -1373,17 +1383,51 @@ function openReceipt(){
   document.getElementById('receipt').textContent = buildMachineReceipt();
   dlg.showModal();
 }
-function downloadReceipt(){
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([buildReceipt().md],{type:'text/markdown;charset=utf-8'}));
-  a.download=`${DATA.doc.id}-${T('rc_file_word')}-${stamp().slice(0,10)}.md`;
-  a.click(); URL.revokeObjectURL(a.href);
+function downloadReceipt(btn){
+  const url = URL.createObjectURL(new Blob([buildReceipt().md], {type: 'text/markdown;charset=utf-8'}));
+  const a = document.createElement('a');
+  a.href = url; a.rel = 'noopener';
+  a.download = `${DATA.doc.id}-${T('rc_file_word')}-${stamp().slice(0,10)}.md`;
+  if('download' in a){
+    /* 锚点挂进弹窗里再点:showModal 期间弹窗以外的节点都是 inert。 */
+    a.hidden = true; dlg.appendChild(a); a.click(); a.remove();
+    btn.textContent = T('downloaded');
+  } else {
+    window.open(url, '_blank');            /* 老 WebView 不认 download 属性:至少让人看到内容另存 */
+    btn.textContent = T('download_opened');
+  }
+  /* 不能在 click() 后同步 revoke —— Safari/Firefox 会在真正开始读 blob 前就把它释放掉,
+     下载静默失败,按钮看起来「点了没反应」。留足时间再释放。 */
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  setTimeout(() => btn.textContent = T('download'), 2400);
+}
+/* 同步复制:在弹窗里临时放一个 textarea,选中后 execCommand('copy')。
+   navigator.clipboard 在 data: 预览、沙箱 iframe(Teams/SharePoint 之类的文件预览)、
+   内置浏览器里要么不存在、要么直接拒绝;这条老路仍然通,而且结果当场可知,不必等 promise。
+   textarea 必须挂在弹窗内 —— showModal 期间弹窗以外的节点 inert,聚焦不上,复制到的就是空。 */
+function copySync(s){
+  const ta = document.createElement('textarea');
+  ta.value = s; ta.readOnly = true; ta.setAttribute('aria-hidden', 'true');
+  ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
+  (dlg.open ? dlg : document.body).appendChild(ta);
+  ta.focus(); ta.select(); ta.setSelectionRange(0, s.length);
+  let ok = false;
+  try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
+  ta.remove();
+  return ok;
 }
 async function copyReceipt(btn){
-  try{ await navigator.clipboard.writeText(buildMachineReceipt()); btn.textContent=T('copied');
-       setTimeout(()=>btn.textContent=T('copy'),1800); }
-  catch(e){ const r=document.createRange(); r.selectNodeContents(document.getElementById('receipt'));
-    getSelection().removeAllRanges(); getSelection().addRange(r); btn.textContent=T('copy_manual'); }
+  const s = buildMachineReceipt();
+  let ok = copySync(s);
+  btn.focus();
+  if(!ok && navigator.clipboard){ try{ await navigator.clipboard.writeText(s); ok = true; }catch(e){} }
+  if(ok){ btn.textContent = T('copied'); setTimeout(() => btn.textContent = T('copy'), 1800); return; }
+  /* 两条路都不通:把折叠区展开再选中 —— 业务得看见选中的是什么,才知道该按 ⌘C。 */
+  const raw = document.getElementById('receipt');
+  raw.closest('details').open = true;
+  const r = document.createRange(); r.selectNodeContents(raw);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+  btn.textContent = T('copy_manual');
 }
 
 /* 兜底出口：一次性发单、业务异步回填，中间没有 AI —— 选项集猜错了业务当场没法跟 AI 说，
@@ -1404,6 +1448,84 @@ QS.forEach(q=>{
    + `<div class="fld"><input type="text" id="other-${no}" placeholder="${esc(T('other_ph'))}"></div></div>`);
 });
 
+/* ── 草稿自动保存 ─────────────────────────────────────────────
+   业务填一半合上电脑、第二天再打开是常态,答案原本只活在 DOM 里,关掉就没了。
+   现在每次改动都写进 localStorage;键带 doc.id 与轮次 —— 同一份单子换个存放路径再打开
+   也接得上(Chrome 的 file:// 页面共用一个源),不同轮次互不串。
+   局限要明说:只在这台电脑的这个浏览器里。换电脑、换浏览器没有;data:/沙箱预览里
+   localStorage 直接抛错 —— 那种环境页面会写明「无法自动保存」,不让业务以为存了。 */
+const DRAFT_KEY = `rc-draft:${DATA.doc.id}:r${DATA.doc.round}`;
+const store = (() => {
+  try{ localStorage.setItem('rc-probe', '1'); localStorage.removeItem('rc-probe'); return localStorage; }
+  catch(e){ return null; }
+})();
+const draftFields = () => [...document.querySelectorAll('main input, main textarea')]
+  .filter(el => el.id !== 's-date');
+function collectDraft(){
+  const d = {at: stamp(), radio: {}, check: [], text: {}, auto: {}};
+  draftFields().forEach(el => {
+    if(el.type === 'radio'){ if(el.checked) d.radio[el.name] = el.value; }
+    else if(el.type === 'checkbox'){
+      if(el.checked) d.check.push(el.classList.contains('deny-x') ? `deny:${el.dataset.q}` : el.id); }
+    else if(el.id && el.value.trim()){
+      d.text[el.id] = el.value;
+      if(el.dataset.auto === '1') d.auto[el.id] = el.dataset.autoVal || '';   /* carry 带来的值仍算「自动」 */
+    }
+  });
+  d.empty = !Object.keys(d.radio).length && !d.check.length && !Object.keys(d.text).length;
+  return d;
+}
+let saveTimer = null;
+function saveDraft(){
+  if(!store) return;
+  const d = collectDraft();
+  try{
+    if(d.empty) store.removeItem(DRAFT_KEY); else store.setItem(DRAFT_KEY, JSON.stringify(d));
+    setText('savedAt', d.empty ? '' : T('autosaved', {when: d.at.slice(11)}));
+  }catch(e){ setText('savedAt', T('autosave_off')); }   /* 配额满/隐私模式写失败:明说,不装作存了 */
+}
+function restoreDraft(){
+  if(!store){ setText('savedAt', T('autosave_off')); return; }
+  let d = null;
+  try{ d = JSON.parse(store.getItem(DRAFT_KEY) || 'null'); }catch(e){ d = null; }
+  if(!d || d.empty) return;
+  Object.entries(d.radio || {}).forEach(([n, v]) => {
+    const i = document.querySelector(`input[type=radio][name="${CSS.escape(n)}"][value="${CSS.escape(v)}"]`);
+    if(i) i.checked = true;                 /* 题目改过、选项没了:静默跳过,不抛 */
+  });
+  (d.check || []).forEach(k => {
+    const i = k.startsWith('deny:') ? document.querySelector(`.deny-x[data-q="${CSS.escape(k.slice(5))}"]`)
+                                    : document.getElementById(k);
+    if(i) i.checked = true;
+  });
+  Object.entries(d.text || {}).forEach(([id, v]) => {
+    const el = document.getElementById(id); if(el && el.id !== 's-date') el.value = v; });
+  Object.entries(d.auto || {}).forEach(([id, v]) => {
+    const el = document.getElementById(id); if(el){ el.dataset.auto = '1'; el.dataset.autoVal = v; } });
+  const bar = document.getElementById('restoreBar');
+  bar.innerHTML = `<span>${esc(T('restore_note', {when: d.at}))}</span>`
+    + `<button class="btn ghost" type="button" id="btnClearDraft">${esc(T('restore_clear'))}</button>`;
+  bar.hidden = false;
+  document.getElementById('btnClearDraft').onclick = clearDraft;
+  setText('savedAt', T('autosaved', {when: d.at.slice(11)}));
+}
+function clearDraft(){
+  if(!confirm(T('restore_clear_confirm'))) return;
+  draftFields().forEach(el => {
+    if(el.type === 'radio' || el.type === 'checkbox') el.checked = false; else el.value = '';
+    delete el.dataset.auto; delete el.dataset.autoVal;
+  });
+  try{ if(store) store.removeItem(DRAFT_KEY); }catch(e){}
+  document.getElementById('restoreBar').hidden = true;
+  setText('savedAt', '');
+  refreshAll();
+}
+const queueSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveDraft, 250); };
+document.addEventListener('input', queueSave);
+document.addEventListener('change', queueSave);
+window.addEventListener('pagehide', () => { clearTimeout(saveTimer); saveDraft(); });
+
+restoreDraft();
 refreshAll();
 </script>
 </body>

@@ -155,3 +155,51 @@ class TestRenderHtml(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestExportAndDraft(unittest.TestCase):
+    """导出与草稿的三处环境兜底。Chrome 的 file:// 下三个动作本来就都通,失败都发生在别处:
+    Safari、Claude/Teams/微信的内置预览(data:/沙箱 iframe)、无 Clipboard API 的 WebView。
+    模板不能只按最顺的那条路写。"""
+    @classmethod
+    def setUpClass(cls):
+        cls.tpl = bq.TEMPLATE_PATH.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _fn(tpl, sig):
+        m = re.search(re.escape(sig) + r"(.*?)\n\}", tpl, re.S)
+        assert m, f"模板里找不到 {sig}"
+        return m.group(1)
+
+    def test_copy_has_a_synchronous_fallback(self):
+        """navigator.clipboard 在 data:/沙箱 iframe/内置浏览器里要么不存在、要么直接拒绝——
+        只靠它,业务点一下没反应、再点一下还是没反应。"""
+        self.assertIn("execCommand('copy')", self.tpl)
+
+    def test_copy_last_resort_makes_the_selection_visible(self):
+        """最后的兜底是让人手动 ⌘C —— 选中的文本必须看得见;折叠着的 <details> 里
+        选中了什么,业务看不到,只会以为按钮坏了。"""
+        body = self._fn(self.tpl, "async function copyReceipt(").replace(" ", "")
+        self.assertIn("closest('details').open=true", body)
+
+    def test_download_does_not_revoke_the_url_synchronously(self):
+        """Safari/Firefox 在 a.click() 之后同步 revokeObjectURL 会让下载静默失败——
+        按钮点了没任何反应。"""
+        body = self._fn(self.tpl, "function downloadReceipt(")
+        self.assertNotRegex(body, r"click\(\);\s*URL\.revokeObjectURL")
+        self.assertRegex(body, r"setTimeout\([^;]*revokeObjectURL")
+
+    def test_download_gives_visible_feedback(self):
+        body = self._fn(self.tpl, "function downloadReceipt(")
+        self.assertIn("T('downloaded')", body)
+
+    def test_answers_are_autosaved_and_restored(self):
+        """关掉浏览器再打开,之前点的选项不能全没了。"""
+        for token in ("rc-draft:", "function saveDraft(", "function restoreDraft(",
+                      "T('restore_clear')", "T('autosave_off')"):
+            self.assertIn(token, self.tpl, token)
+
+    def test_restore_runs_after_the_other_option_is_injected(self):
+        """兜底「都不是」的输入框是最后插进 DOM 的;恢复草稿若跑在它前面,
+        那题的补充说明永远恢复不回来。"""
+        self.assertLess(self.tpl.rindex('data-kind="other"'), self.tpl.index("restoreDraft();"))

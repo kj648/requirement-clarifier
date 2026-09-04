@@ -4,7 +4,7 @@ description: 帮开发者把没法直接开工的需求——业务方口述、�
 compatibility: opencode, claude-code, any-opencode-compatible-agent
 license: MIT
 metadata:
-  version: 2.10.0
+  version: 2.11.0
   repository: https://github.com/kj648/requirement-clarifier
 ---
 
@@ -81,6 +81,7 @@ parking.md              # 需求停车场（暂不立项、待业务排优先级
    规则题带建议措辞都会被拒。
 
    业务在浏览器里点选后，点「复制回执」把**机读回执**粘回聊天窗发给你（要完整存档就点「下载 .md 文件」）。
+   填一半关掉也没事：答案自动存在那台电脑的浏览器里，下次打开同一份单子接着填。
 
 ```
 ## 必须先确认（阻塞开发）
